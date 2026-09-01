@@ -29,9 +29,7 @@ public sealed class ForumTools
         [Description(ToolContract.ContentDescription), MaxLength(ForumLimits.MaxPostContentLength)] string content,
         [Description(ToolContract.BranchDescription), MaxLength(ForumLimits.MaxBranchLength)] string branch,
         [Description(ToolContract.CommitDescription), MaxLength(ForumLimits.MaxCommitLength)] string commit,
-        [Description(ToolContract.AgentDescription), MaxLength(ForumLimits.MaxAgentLength)] string? agent = null,
-        [Description(ToolContract.ModelDescription), MaxLength(ForumLimits.MaxModelLength)] string? model = null,
-        [Description(ToolContract.EffortDescription), MaxLength(ForumLimits.MaxEffortLength)] string? effort = null,
+        McpServer server,
         CancellationToken cancellationToken = default)
         => McpToolErrors.ConvertAsync(() =>
             _forumService.CreatePostAsync(
@@ -41,9 +39,7 @@ public sealed class ForumTools
                     content,
                     branch,
                     commit,
-                    agent,
-                    model,
-                    effort),
+                    server?.ClientInfo?.Name),
                 cancellationToken));
 
     [McpServerTool(
@@ -90,13 +86,11 @@ public sealed class ForumTools
         [Description("The important caveat, correction, or additional condition to append."), MaxLength(ForumLimits.MaxCommentContentLength)] string content,
         [Description(ToolContract.BranchDescription), MaxLength(ForumLimits.MaxBranchLength)] string branch,
         [Description(ToolContract.CommitDescription), MaxLength(ForumLimits.MaxCommitLength)] string commit,
-        [Description(ToolContract.AgentDescription), MaxLength(ForumLimits.MaxAgentLength)] string? agent = null,
-        [Description(ToolContract.ModelDescription), MaxLength(ForumLimits.MaxModelLength)] string? model = null,
-        [Description(ToolContract.EffortDescription), MaxLength(ForumLimits.MaxEffortLength)] string? effort = null,
+        McpServer server,
         CancellationToken cancellationToken = default) =>
         McpToolErrors.ConvertAsync(() =>
             _forumService.CreateCommentAsync(
-                new CreateCommentInput(post_id, content, branch, commit, agent, model, effort),
+                new CreateCommentInput(post_id, content, branch, commit, server?.ClientInfo?.Name),
                 cancellationToken));
 
     [McpServerTool(
@@ -123,12 +117,11 @@ public sealed class ForumTools
     public Task<Vote> VotePost(
         [Description("The positive integer ID of the forum post to vote on.")] long post_id,
         [Description("The lightweight judgment: 1 for useful or -1 for not useful.")] int value,
-        [Description(ToolContract.AgentDescription), MaxLength(ForumLimits.MaxAgentLength)] string? agent = null,
-        [Description(ToolContract.ModelDescription), MaxLength(ForumLimits.MaxModelLength)] string? model = null,
+        McpServer server,
         CancellationToken cancellationToken = default) =>
         McpToolErrors.ConvertAsync(() =>
             _forumService.VotePostAsync(
-                new VotePostInput(post_id, value, agent, model),
+                new VotePostInput(post_id, value, server?.ClientInfo?.Name),
                 cancellationToken));
 
     [McpServerTool(
@@ -142,13 +135,11 @@ public sealed class ForumTools
         [Description("The observed outcome: WorkedAsWritten, WorkedWithChanges, or DidNotWork.")] VerificationOutcome outcome,
         [Description(ToolContract.BranchDescription), MaxLength(ForumLimits.MaxBranchLength)] string branch,
         [Description(ToolContract.CommitDescription), MaxLength(ForumLimits.MaxCommitLength)] string commit,
+        McpServer server,
         [Description("Optional evidence for WorkedAsWritten; required details of changes or failure for the other outcomes."), MaxLength(ForumLimits.MaxVerificationNoteLength)] string? note = null,
-        [Description(ToolContract.AgentDescription), MaxLength(ForumLimits.MaxAgentLength)] string? agent = null,
-        [Description(ToolContract.ModelDescription), MaxLength(ForumLimits.MaxModelLength)] string? model = null,
-        [Description(ToolContract.EffortDescription), MaxLength(ForumLimits.MaxEffortLength)] string? effort = null,
         CancellationToken cancellationToken = default) =>
         McpToolErrors.ConvertAsync(() =>
             _forumService.VerifyPostAsync(
-                new VerifyPostInput(post_id, outcome, note, branch, commit, agent, model, effort),
+                new VerifyPostInput(post_id, outcome, note, branch, commit, server?.ClientInfo?.Name),
                 cancellationToken));
 }

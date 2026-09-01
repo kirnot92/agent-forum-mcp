@@ -19,17 +19,18 @@ public sealed class ForumToolsErrorTests : IDisposable
     {
         var tools = CreateTools();
 
-        await AssertConciseError(() => tools.CreatePost("C:\\local\\repo", "title", "content", "main", "abc"));
+        await AssertConciseError(() => tools.CreatePost("C:\\local\\repo", "title", "content", "main", "abc", null!));
         await AssertConciseError(() => tools.SearchPosts("owner/repo", " "));
         await AssertConciseError(() => tools.ReadPost(0));
-        await AssertConciseError(() => tools.CreateComment(0, "content", "main", "abc"));
+        await AssertConciseError(() => tools.CreateComment(0, "content", "main", "abc", null!));
         await AssertConciseError(() => tools.ReadComments(0));
-        await AssertConciseError(() => tools.VotePost(1, 0));
+        await AssertConciseError(() => tools.VotePost(1, 0, null!));
         await AssertConciseError(() => tools.VerifyPost(
             1,
             VerificationOutcome.WorkedWithChanges,
             "main",
-            "abc"));
+            "abc",
+            null!));
     }
 
     [Fact]

@@ -15,8 +15,6 @@ public sealed class ForumValidationTests
             Branch = new string('b', ForumLimits.MaxBranchLength),
             Commit = new string('c', ForumLimits.MaxCommitLength),
             Agent = new string('a', ForumLimits.MaxAgentLength),
-            Model = new string('m', ForumLimits.MaxModelLength),
-            Effort = new string('e', ForumLimits.MaxEffortLength),
         };
 
         ForumValidation.Validate(input);
@@ -67,8 +65,6 @@ public sealed class ForumValidationTests
     [InlineData("Branch")]
     [InlineData("Commit")]
     [InlineData("Agent")]
-    [InlineData("Model")]
-    [InlineData("Effort")]
     public void CreatePost_RejectsOtherFieldsOverMaximum(string field)
     {
         var input = field switch
@@ -77,8 +73,6 @@ public sealed class ForumValidationTests
             "Branch" => ValidPost() with { Branch = new string('b', ForumLimits.MaxBranchLength + 1) },
             "Commit" => ValidPost() with { Commit = new string('c', ForumLimits.MaxCommitLength + 1) },
             "Agent" => ValidPost() with { Agent = new string('a', ForumLimits.MaxAgentLength + 1) },
-            "Model" => ValidPost() with { Model = new string('m', ForumLimits.MaxModelLength + 1) },
-            "Effort" => ValidPost() with { Effort = new string('e', ForumLimits.MaxEffortLength + 1) },
             _ => throw new ArgumentOutOfRangeException(nameof(field)),
         };
 
@@ -94,8 +88,6 @@ public sealed class ForumValidationTests
             Branch = new string('b', ForumLimits.MaxBranchLength),
             Commit = new string('c', ForumLimits.MaxCommitLength),
             Agent = new string('a', ForumLimits.MaxAgentLength),
-            Model = new string('m', ForumLimits.MaxModelLength),
-            Effort = new string('e', ForumLimits.MaxEffortLength),
         };
 
         ForumValidation.Validate(input);
@@ -116,8 +108,6 @@ public sealed class ForumValidationTests
     [InlineData("Branch")]
     [InlineData("Commit")]
     [InlineData("Agent")]
-    [InlineData("Model")]
-    [InlineData("Effort")]
     public void CreateComment_RejectsOtherFieldsOverMaximum(string field)
     {
         var input = field switch
@@ -125,8 +115,6 @@ public sealed class ForumValidationTests
             "Branch" => ValidComment() with { Branch = new string('b', ForumLimits.MaxBranchLength + 1) },
             "Commit" => ValidComment() with { Commit = new string('c', ForumLimits.MaxCommitLength + 1) },
             "Agent" => ValidComment() with { Agent = new string('a', ForumLimits.MaxAgentLength + 1) },
-            "Model" => ValidComment() with { Model = new string('m', ForumLimits.MaxModelLength + 1) },
-            "Effort" => ValidComment() with { Effort = new string('e', ForumLimits.MaxEffortLength + 1) },
             _ => throw new ArgumentOutOfRangeException(nameof(field)),
         };
 
@@ -190,9 +178,7 @@ public sealed class ForumValidationTests
     public void Vote_RejectsOverlongProvenance()
     {
         Assert.Throws<ArgumentException>(() => ForumValidation.Validate(
-            new VotePostInput(1, 1, new string('a', ForumLimits.MaxAgentLength + 1), null)));
-        Assert.Throws<ArgumentException>(() => ForumValidation.Validate(
-            new VotePostInput(1, 1, null, new string('m', ForumLimits.MaxModelLength + 1))));
+            new VotePostInput(1, 1, new string('a', ForumLimits.MaxAgentLength + 1))));
     }
 
     [Theory]
@@ -255,8 +241,6 @@ public sealed class ForumValidationTests
     [InlineData("Branch")]
     [InlineData("Commit")]
     [InlineData("Agent")]
-    [InlineData("Model")]
-    [InlineData("Effort")]
     public void Verification_RejectsRepositoryStateAndProvenanceOverMaximum(string field)
     {
         var input = field switch
@@ -264,8 +248,6 @@ public sealed class ForumValidationTests
             "Branch" => ValidVerification() with { Branch = new string('b', ForumLimits.MaxBranchLength + 1) },
             "Commit" => ValidVerification() with { Commit = new string('c', ForumLimits.MaxCommitLength + 1) },
             "Agent" => ValidVerification() with { Agent = new string('a', ForumLimits.MaxAgentLength + 1) },
-            "Model" => ValidVerification() with { Model = new string('m', ForumLimits.MaxModelLength + 1) },
-            "Effort" => ValidVerification() with { Effort = new string('e', ForumLimits.MaxEffortLength + 1) },
             _ => throw new ArgumentOutOfRangeException(nameof(field)),
         };
 
@@ -339,10 +321,10 @@ public sealed class ForumValidationTests
     }
 
     private static CreatePostInput ValidPost() =>
-        new("agent-forum-mcp", "Useful observation", "Inspect A before B.", "main", "abc123", "codex", "gpt", "high");
+        new("agent-forum-mcp", "Useful observation", "Inspect A before B.", "main", "abc123", "codex");
 
     private static CreateCommentInput ValidComment() =>
-        new(1, "This also applies to C.", "main", "abc123", "codex", "gpt", "high");
+        new(1, "This also applies to C.", "main", "abc123", "codex");
 
     private static VerifyPostInput ValidVerification() =>
         new(
@@ -351,7 +333,5 @@ public sealed class ForumValidationTests
             null,
             "main",
             "abc123",
-            "codex",
-            "gpt",
-            "high");
+            "codex");
 }

@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Data.Sqlite;
 using ModelContextProtocol.Client;
 using ModelContextProtocol.Protocol;
 
@@ -48,8 +49,8 @@ public sealed class HttpServerHostProtocolTests : IDisposable
                 .Single();
             var endpoint = new Uri(new Uri(address), ForumHttpOptions.McpPath);
 
-            var firstClientTask = CreateClientAsync(endpoint, timeout.Token);
-            var secondClientTask = CreateClientAsync(endpoint, timeout.Token);
+            var firstClientTask = CreateClientAsync(endpoint, "client-alpha", timeout.Token);
+            var secondClientTask = CreateClientAsync(endpoint, "client-beta", timeout.Token);
             await Task.WhenAll(firstClientTask, secondClientTask);
 
             await using var firstClient = await firstClientTask;
@@ -62,6 +63,15 @@ public sealed class HttpServerHostProtocolTests : IDisposable
             var secondTools = await secondClient.ListToolsAsync(cancellationToken: timeout.Token);
             Assert.Equal(ToolContract.ToolNames.Order(), firstTools.Select(tool => tool.Name).Order());
             Assert.Equal(ToolContract.ToolNames.Order(), secondTools.Select(tool => tool.Name).Order());
+
+            foreach (var toolName in new[] { "create_post", "create_comment", "vote_post", "verify_post" })
+            {
+                var properties = Assert.Single(firstTools, tool => tool.Name == toolName)
+                    .ProtocolTool.InputSchema.GetProperty("properties");
+                Assert.False(properties.TryGetProperty("agent", out _));
+                Assert.False(properties.TryGetProperty("model", out _));
+                Assert.False(properties.TryGetProperty("effort", out _));
+            }
 
             var createResult = await firstClient.CallToolAsync(
                 "create_post",
@@ -76,6 +86,71 @@ public sealed class HttpServerHostProtocolTests : IDisposable
                 cancellationToken: timeout.Token);
             Assert.NotEqual(true, createResult.IsError);
 
+            var secondCreateResult = await secondClient.CallToolAsync(
+                "create_post",
+                new Dictionary<string, object?>
+                {
+                    ["repo"] = "acme/shared-http",
+                    ["title"] = "The second client's post",
+                    ["content"] = "Its client info must remain separate from the first session.",
+                    ["branch"] = "main",
+                    ["commit"] = "def5678",
+                },
+                cancellationToken: timeout.Token);
+            Assert.NotEqual(true, secondCreateResult.IsError);
+
+            Assert.NotEqual(true, (await firstClient.CallToolAsync(
+                "create_comment",
+                new Dictionary<string, object?>
+                {
+                    ["post_id"] = 2,
+                    ["content"] = "alpha comment",
+                    ["branch"] = "main",
+                    ["commit"] = "abc1234",
+                },
+                cancellationToken: timeout.Token)).IsError);
+            Assert.NotEqual(true, (await secondClient.CallToolAsync(
+                "create_comment",
+                new Dictionary<string, object?>
+                {
+                    ["post_id"] = 1,
+                    ["content"] = "beta comment",
+                    ["branch"] = "main",
+                    ["commit"] = "def5678",
+                },
+                cancellationToken: timeout.Token)).IsError);
+
+            Assert.NotEqual(true, (await firstClient.CallToolAsync(
+                "vote_post",
+                new Dictionary<string, object?> { ["post_id"] = 2, ["value"] = 1 },
+                cancellationToken: timeout.Token)).IsError);
+            Assert.NotEqual(true, (await secondClient.CallToolAsync(
+                "vote_post",
+                new Dictionary<string, object?> { ["post_id"] = 1, ["value"] = -1 },
+                cancellationToken: timeout.Token)).IsError);
+
+            Assert.NotEqual(true, (await firstClient.CallToolAsync(
+                "verify_post",
+                new Dictionary<string, object?>
+                {
+                    ["post_id"] = 2,
+                    ["outcome"] = "WorkedAsWritten",
+                    ["branch"] = "main",
+                    ["commit"] = "abc1234",
+                },
+                cancellationToken: timeout.Token)).IsError);
+            Assert.NotEqual(true, (await secondClient.CallToolAsync(
+                "verify_post",
+                new Dictionary<string, object?>
+                {
+                    ["post_id"] = 1,
+                    ["outcome"] = "DidNotWork",
+                    ["note"] = "beta verification",
+                    ["branch"] = "main",
+                    ["commit"] = "def5678",
+                },
+                cancellationToken: timeout.Token)).IsError);
+
             var readResult = await secondClient.CallToolAsync(
                 "read_post",
                 new Dictionary<string, object?> { ["post_id"] = 1 },
@@ -83,6 +158,29 @@ public sealed class HttpServerHostProtocolTests : IDisposable
             Assert.NotEqual(true, readResult.IsError);
             var content = Assert.IsType<TextContentBlock>(Assert.Single(readResult.Content));
             Assert.Contains("One process shares forum state", content.Text);
+
+            var service = app.Services.GetRequiredService<ForumService>();
+            var firstPost = await service.ReadPostAsync(1, timeout.Token);
+            var secondPost = await service.ReadPostAsync(2, timeout.Token);
+            Assert.Equal("client-alpha", firstPost.Post.Agent);
+            Assert.Equal("client-beta", secondPost.Post.Agent);
+            Assert.Equal("client-beta", Assert.Single(firstPost.RecentComments).Agent);
+            Assert.Equal("client-alpha", Assert.Single(secondPost.RecentComments).Agent);
+            Assert.Equal("client-beta", Assert.Single(firstPost.RecentVerifications).Agent);
+            Assert.Equal("client-alpha", Assert.Single(secondPost.RecentVerifications).Agent);
+
+            await using var connection = new SqliteConnection($"Data Source={_databasePath};Mode=ReadOnly;Pooling=False");
+            await connection.OpenAsync(timeout.Token);
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT post_id, agent FROM votes ORDER BY post_id;";
+            await using var reader = await command.ExecuteReaderAsync(timeout.Token);
+            Assert.True(await reader.ReadAsync(timeout.Token));
+            Assert.Equal(1, reader.GetInt64(0));
+            Assert.Equal("client-beta", reader.GetString(1));
+            Assert.True(await reader.ReadAsync(timeout.Token));
+            Assert.Equal(2, reader.GetInt64(0));
+            Assert.Equal("client-alpha", reader.GetString(1));
+            Assert.False(await reader.ReadAsync(timeout.Token));
         }
         finally
         {
@@ -104,6 +202,7 @@ public sealed class HttpServerHostProtocolTests : IDisposable
 
     private static async Task<McpClient> CreateClientAsync(
         Uri endpoint,
+        string clientName,
         CancellationToken cancellationToken)
     {
         var transport = new HttpClientTransport(
@@ -116,6 +215,10 @@ public sealed class HttpServerHostProtocolTests : IDisposable
 
         return await McpClient.CreateAsync(
             transport,
+            new McpClientOptions
+            {
+                ClientInfo = new Implementation { Name = clientName, Version = "test" },
+            },
             loggerFactory: NullLoggerFactory.Instance,
             cancellationToken: cancellationToken);
     }

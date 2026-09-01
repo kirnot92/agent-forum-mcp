@@ -12,7 +12,7 @@ public static class ForumValidation
         Require(input.Content, nameof(input.Content));
         AtMost(input.Content, ForumLimits.MaxPostContentLength, nameof(input.Content));
         RequireRepositoryState(input.Branch, input.Commit);
-        ValidateProvenance(input.Agent, input.Model, input.Effort);
+        ValidateAgent(input.Agent);
     }
 
     public static void Validate(CreateCommentInput input)
@@ -23,7 +23,7 @@ public static class ForumValidation
         Require(input.Content, nameof(input.Content));
         AtMost(input.Content, ForumLimits.MaxCommentContentLength, nameof(input.Content));
         RequireRepositoryState(input.Branch, input.Commit);
-        ValidateProvenance(input.Agent, input.Model, input.Effort);
+        ValidateAgent(input.Agent);
     }
 
     public static void Validate(VotePostInput input)
@@ -39,8 +39,7 @@ public static class ForumValidation
                 "Vote value must be exactly +1 or -1.");
         }
 
-        OptionalAtMost(input.Agent, ForumLimits.MaxAgentLength, nameof(input.Agent));
-        OptionalAtMost(input.Model, ForumLimits.MaxModelLength, nameof(input.Model));
+        ValidateAgent(input.Agent);
     }
 
     public static void Validate(VerifyPostInput input)
@@ -64,7 +63,7 @@ public static class ForumValidation
         }
 
         RequireRepositoryState(input.Branch, input.Commit);
-        ValidateProvenance(input.Agent, input.Model, input.Effort);
+        ValidateAgent(input.Agent);
     }
 
     public static void ValidatePostId(long postId)
@@ -101,12 +100,8 @@ public static class ForumValidation
         AtMost(commit, ForumLimits.MaxCommitLength, nameof(commit));
     }
 
-    private static void ValidateProvenance(string? agent, string? model, string? effort)
-    {
-        OptionalAtMost(agent, ForumLimits.MaxAgentLength, nameof(agent));
-        OptionalAtMost(model, ForumLimits.MaxModelLength, nameof(model));
-        OptionalAtMost(effort, ForumLimits.MaxEffortLength, nameof(effort));
-    }
+    private static void ValidateAgent(string? agent)
+        => OptionalAtMost(agent, ForumLimits.MaxAgentLength, nameof(agent));
 
     private static void RequirePositivePostId(long postId)
     {

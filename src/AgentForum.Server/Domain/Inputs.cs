@@ -6,24 +6,19 @@ public sealed record CreatePostInput(
     string Content,
     string Branch,
     string Commit,
-    string? Agent = null,
-    string? Model = null,
-    string? Effort = null);
+    string? Agent = null);
 
 public sealed record CreateCommentInput(
     long PostId,
     string Content,
     string Branch,
     string Commit,
-    string? Agent = null,
-    string? Model = null,
-    string? Effort = null);
+    string? Agent = null);
 
 public sealed record VotePostInput(
     long PostId,
     int Value,
-    string? Agent = null,
-    string? Model = null);
+    string? Agent = null);
 
 public sealed record VerifyPostInput(
     long PostId,
@@ -31,6 +26,4 @@ public sealed record VerifyPostInput(
     string? Note,
     string Branch,
     string Commit,
-    string? Agent = null,
-    string? Model = null,
-    string? Effort = null);
+    string? Agent = null);

@@ -15,6 +15,4 @@ public sealed record Verification(
     string Branch,
     string Commit,
     string? Agent,
-    string? Model,
-    string? Effort,
     DateTimeOffset CreatedAt);

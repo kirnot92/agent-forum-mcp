@@ -51,11 +51,19 @@ public sealed class SqliteForumRepositoryTests : IDisposable
             versions.Add(versionReader.GetInt64(0));
         }
 
-        Assert.Equal([2L], versions);
+        Assert.Equal([0L], versions);
+
+        foreach (var table in new[] { "posts", "comments", "votes", "verifications" })
+        {
+            var columns = await ReadColumnNamesAsync(connection, table);
+            Assert.Contains("agent", columns);
+            Assert.DoesNotContain("model", columns);
+            Assert.DoesNotContain("effort", columns);
+        }
     }
 
     [Fact]
-    public async Task Reopening_compatible_version_two_database_does_not_mutate_schema_or_rebuild_fts()
+    public async Task Reopening_compatible_version_zero_database_does_not_mutate_schema_or_rebuild_fts()
     {
         var repository = CreateRepository();
         await repository.InitializeAsync();
@@ -66,7 +74,7 @@ public sealed class SqliteForumRepositoryTests : IDisposable
             await ExecuteInspectionSqlAsync(connection, """
                 UPDATE schema_migrations
                 SET applied_at = 'reopen-sentinel'
-                WHERE version = 2;
+                WHERE version = 0;
                 """);
         }
 
@@ -75,12 +83,12 @@ public sealed class SqliteForumRepositoryTests : IDisposable
 
         await using var reopened = OpenInspectionConnection();
         await using var check = reopened.CreateCommand();
-        check.CommandText = "SELECT applied_at FROM schema_migrations WHERE version = 2;";
+        check.CommandText = "SELECT applied_at FROM schema_migrations WHERE version = 0;";
         Assert.Equal("reopen-sentinel", (string)(await check.ExecuteScalarAsync())!);
     }
 
     [Fact]
-    public async Task Version_two_database_missing_required_object_fails_without_repair()
+    public async Task Version_zero_database_missing_required_object_fails_without_repair()
     {
         var repository = CreateRepository();
         await repository.InitializeAsync();
@@ -91,7 +99,7 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         }
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => repository.InitializeAsync());
-        Assert.Contains("version 2", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("version 0", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("ix_posts_repo", exception.Message, StringComparison.Ordinal);
         Assert.Contains("recreate", exception.Message, StringComparison.OrdinalIgnoreCase);
 
@@ -117,7 +125,7 @@ public sealed class SqliteForumRepositoryTests : IDisposable
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => CreateRepository().InitializeAsync());
         Assert.Contains($"version {databaseVersion}", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("expects version 2", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("expects version 0", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("recreate", exception.Message, StringComparison.OrdinalIgnoreCase);
 
         await using var inspection = OpenInspectionConnection();
@@ -141,7 +149,7 @@ public sealed class SqliteForumRepositoryTests : IDisposable
 
         var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => CreateRepository().InitializeAsync());
         Assert.Contains("nonempty", exception.Message, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("version 2", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("version 0", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("recreate", exception.Message, StringComparison.OrdinalIgnoreCase);
 
         await using var inspection = OpenInspectionConnection();
@@ -180,6 +188,34 @@ public sealed class SqliteForumRepositoryTests : IDisposable
 
         var search = await reopened.SearchLexicalPostIdsAsync("repo-a", "Same Content", 10);
         Assert.Equal([1L, 2L], search);
+    }
+
+    [Fact]
+    public async Task Agent_provenance_may_be_null_when_client_info_is_unavailable()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+
+        var post = await repository.CreatePostAsync(
+            new CreatePostInput("repo-a", "post", "content", "main", "abc123"),
+            [1f],
+            "model-a");
+        var comment = await repository.CreateCommentAsync(
+            new CreateCommentInput(post.Id, "comment", "main", "def456"));
+        var vote = await repository.AddVoteAsync(new VotePostInput(post.Id, 1));
+        var verification = await repository.AddVerificationAsync(
+            new VerifyPostInput(
+                post.Id,
+                VerificationOutcome.WorkedAsWritten,
+                null,
+                "main",
+                "fed987"));
+
+        Assert.Null(post.Agent);
+        Assert.Null(comment.Agent);
+        Assert.Null(vote.Agent);
+        Assert.Null(verification.Agent);
+        Assert.Null((await repository.ReadPostAsync(post.Id)).Post.Agent);
     }
 
     [Fact]
@@ -387,12 +423,12 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         var repository = CreateRepository(clock);
         await repository.InitializeAsync();
         var post = await repository.CreatePostAsync(
-            new CreatePostInput("repo-a", "immutable title", "immutable content", "feature/a", "abc123", "codex", "model-x", "high"),
+            new CreatePostInput("repo-a", "immutable title", "immutable content", "feature/a", "abc123", "codex"),
             [1f],
             "embedding-model");
 
         clock.UtcNow = clock.UtcNow.AddHours(1);
-        var vote = await repository.AddVoteAsync(new VotePostInput(post.Id, 1, "reader", "model-y"));
+        var vote = await repository.AddVoteAsync(new VotePostInput(post.Id, 1, "reader"));
         var afterVote = await repository.ReadPostAsync(post.Id);
         Assert.Equal(post.CreatedAt, afterVote.Post.LastActivityAt);
         Assert.Equal(1, afterVote.Votes.Upvotes);
@@ -401,7 +437,7 @@ public sealed class SqliteForumRepositoryTests : IDisposable
 
         clock.UtcNow = clock.UtcNow.AddHours(1);
         var comment = await repository.CreateCommentAsync(
-            new CreateCommentInput(post.Id, "a caveat", "feature/b", "def456", "codex", "model-z", "medium"));
+            new CreateCommentInput(post.Id, "a caveat", "feature/b", "def456", "codex"));
         var afterComment = await repository.ReadPostAsync(post.Id);
         Assert.Equal(clock.UtcNow, afterComment.Post.LastActivityAt);
         Assert.Equal("immutable title", afterComment.Post.Title);
@@ -409,8 +445,6 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         Assert.Equal("feature/b", comment.Branch);
         Assert.Equal("def456", comment.Commit);
         Assert.Equal("codex", comment.Agent);
-        Assert.Equal("model-z", comment.Model);
-        Assert.Equal("medium", comment.Effort);
 
         clock.UtcNow = clock.UtcNow.AddHours(1);
         var verification = await repository.AddVerificationAsync(new VerifyPostInput(
@@ -419,9 +453,7 @@ public sealed class SqliteForumRepositoryTests : IDisposable
             "needed one extra flag",
             "feature/c",
             "fed789",
-            "codex",
-            "model-v",
-            "low"));
+            "codex"));
         var afterVerification = await repository.ReadPostAsync(post.Id);
         Assert.Equal(clock.UtcNow, afterVerification.Post.LastActivityAt);
         Assert.Equal(1, afterVerification.Verifications.WorkedWithChangesCount);
@@ -488,8 +520,6 @@ public sealed class SqliteForumRepositoryTests : IDisposable
             Assert.Equal("main", comment.Branch);
             Assert.Equal("def456", comment.Commit);
             Assert.Equal("codex", comment.Agent);
-            Assert.Equal("model", comment.Model);
-            Assert.Equal("medium", comment.Effort);
         });
 
         var commentPage = await repository.ReadCommentsAsync(post.Id, 5, 0);
@@ -662,13 +692,13 @@ public sealed class SqliteForumRepositoryTests : IDisposable
     }
 
     private static CreatePostInput PostInput(string repo, string title, string content) =>
-        new(repo, title, content, "main", "abc123", "codex", "model", "high");
+        new(repo, title, content, "main", "abc123", "codex");
 
     private static CreateCommentInput CommentInput(long postId, string content) =>
-        new(postId, content, "main", "def456", "codex", "model", "medium");
+        new(postId, content, "main", "def456", "codex");
 
     private static VerifyPostInput VerificationInput(long postId, VerificationOutcome outcome) =>
-        new(postId, outcome, "checked", "main", "fed987", "codex", "model", "low");
+        new(postId, outcome, "checked", "main", "fed987", "codex");
 
     private static async Task<HashSet<(string Type, string Name)>> ReadSchemaObjectsAsync(SqliteConnection connection)
     {
@@ -679,6 +709,22 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         while (await reader.ReadAsync())
         {
             result.Add((reader.GetString(0), reader.GetString(1)));
+        }
+
+        return result;
+    }
+
+    private static async Task<HashSet<string>> ReadColumnNamesAsync(
+        SqliteConnection connection,
+        string table)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({table});";
+        await using var reader = await command.ExecuteReaderAsync();
+        var result = new HashSet<string>(StringComparer.Ordinal);
+        while (await reader.ReadAsync())
+        {
+            result.Add(reader.GetString(1));
         }
 
         return result;

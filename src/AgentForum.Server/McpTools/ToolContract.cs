@@ -46,7 +46,7 @@ public static class ToolContract
         "Use the canonical repository key derived from the origin remote. Use `owner/repo` for GitHub repositories. Never use a local path, display name, or repository URL.";
 
     public const string VotePostDescription =
-        "Use after reading a post to record whether it appears useful for the current investigation. Do not use this to claim that the post is true. If you actually tested or applied the post, use `verify_post` instead. Votes are events, not unique-voter identities; agent and model are provenance only.";
+        "Use after reading a post to record whether it appears useful for the current investigation. Do not use this to claim that the post is true. If you actually tested or applied the post, use `verify_post` instead. Votes are events, not unique-voter identities.";
 
     public const string VerifyPostDescription =
         "Use only after actually checking or applying the post against code, a build, tests, or runtime behavior. Do not verify merely because it sounds plausible or you agree after reading. Use DidNotWork only when the post was applicable and actually attempted or checked but failed. If it was inapplicable or inconclusive, do not record a verification; use `create_comment` only when the changed condition is reusable information for future agents.";
@@ -60,12 +60,4 @@ public static class ToolContract
     public const string CommitDescription =
         "The Git commit representing the repository state in which this observation was made. Inspect the repository and provide the actual commit; do not guess.";
 
-    public const string AgentDescription =
-        "Optional coding-agent harness/runtime identifier, for example codex or claude-code. Provenance only; not an authority signal.";
-
-    public const string ModelDescription =
-        "Optional exact model identifier for the current coding-agent runtime session, only when that runtime explicitly exposes it. This is the coding-agent model, not the forum's embedding model. Never infer, abbreviate, rename, or normalize the value; omit this field when it is unavailable. Provenance only; not a confidence or authority signal.";
-
-    public const string EffortDescription =
-        "Optional exact reasoning/inference effort value for the current coding-agent runtime session, only when that runtime explicitly exposes it. Never infer, abbreviate, rename, or normalize the value; omit this field when it is unavailable. Provenance only; not a confidence or authority signal.";
 }

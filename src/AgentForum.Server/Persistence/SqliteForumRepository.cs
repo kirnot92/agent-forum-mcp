@@ -9,7 +9,7 @@ namespace AgentForum.Server.Persistence;
 
 public sealed partial class SqliteForumRepository : IForumRepository
 {
-    private const int CurrentSchemaVersion = 2;
+    private const int CurrentSchemaVersion = 0;
     private const int SnippetLength = 240;
     private const int HydrationBatchSize = 500;
 
@@ -140,10 +140,10 @@ public sealed partial class SqliteForumRepository : IForumRepository
                 transaction,
                 """
                 INSERT INTO posts(
-                    repo, title, content, branch, commit_hash, agent, model, effort,
+                    repo, title, content, branch, commit_hash, agent,
                     created_at, last_activity_at)
                 VALUES (
-                    $repo, $title, $content, $branch, $commit, $agent, $model, $effort,
+                    $repo, $title, $content, $branch, $commit, $agent,
                     $createdAt, $lastActivityAt);
                 """,
                 cancellationToken,
@@ -153,8 +153,6 @@ public sealed partial class SqliteForumRepository : IForumRepository
                 ("$branch", input.Branch),
                 ("$commit", input.Commit),
                 ("$agent", input.Agent),
-                ("$model", input.Model),
-                ("$effort", input.Effort),
                 ("$createdAt", timestamp),
                 ("$lastActivityAt", timestamp))
             .ConfigureAwait(false);
@@ -183,8 +181,6 @@ public sealed partial class SqliteForumRepository : IForumRepository
             input.Branch,
             input.Commit,
             input.Agent,
-            input.Model,
-            input.Effort,
             now,
             now);
     }
@@ -215,12 +211,12 @@ public sealed partial class SqliteForumRepository : IForumRepository
             var post = ReadPost(reader);
             result = new ReadPostResult(
                 post,
-                new VoteSummary(reader.GetInt32(11), reader.GetInt32(12)),
-                new VerificationSummary(reader.GetInt32(13), reader.GetInt32(14), reader.GetInt32(15)),
+                new VoteSummary(reader.GetInt32(9), reader.GetInt32(10)),
+                new VerificationSummary(reader.GetInt32(11), reader.GetInt32(12), reader.GetInt32(13)),
                 Array.Empty<Verification>(),
                 Array.Empty<Comment>(),
-                reader.GetInt32(16),
-                reader.GetInt32(17));
+                reader.GetInt32(14),
+                reader.GetInt32(15));
         }
 
         var recentVerifications = await ReadRecentVerificationsAsync(
@@ -264,9 +260,9 @@ public sealed partial class SqliteForumRepository : IForumRepository
                 transaction,
                 """
                 INSERT INTO comments(
-                    post_id, content, branch, commit_hash, agent, model, effort, created_at)
+                    post_id, content, branch, commit_hash, agent, created_at)
                 VALUES (
-                    $postId, $content, $branch, $commit, $agent, $model, $effort, $createdAt);
+                    $postId, $content, $branch, $commit, $agent, $createdAt);
                 """,
                 cancellationToken,
                 ("$postId", input.PostId),
@@ -274,8 +270,6 @@ public sealed partial class SqliteForumRepository : IForumRepository
                 ("$branch", input.Branch),
                 ("$commit", input.Commit),
                 ("$agent", input.Agent),
-                ("$model", input.Model),
-                ("$effort", input.Effort),
                 ("$createdAt", timestamp))
             .ConfigureAwait(false);
 
@@ -290,8 +284,6 @@ public sealed partial class SqliteForumRepository : IForumRepository
             input.Branch,
             input.Commit,
             input.Agent,
-            input.Model,
-            input.Effort,
             now);
     }
 
@@ -327,7 +319,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT id, post_id, content, branch, commit_hash, agent, model, effort, created_at
+            SELECT id, post_id, content, branch, commit_hash, agent, created_at
             FROM comments
             WHERE post_id = $postId
             ORDER BY created_at, id
@@ -349,9 +341,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
                     reader.GetString(3),
                     reader.GetString(4),
                     GetNullableString(reader, 5),
-                    GetNullableString(reader, 6),
-                    GetNullableString(reader, 7),
-                    ParseTimestamp(reader.GetString(8))));
+                    ParseTimestamp(reader.GetString(6))));
             }
         }
 
@@ -377,19 +367,18 @@ public sealed partial class SqliteForumRepository : IForumRepository
                 connection,
                 transaction,
                 """
-                INSERT INTO votes(post_id, agent, model, value, created_at)
-                VALUES ($postId, $agent, $model, $value, $createdAt);
+                INSERT INTO votes(post_id, agent, value, created_at)
+                VALUES ($postId, $agent, $value, $createdAt);
                 """,
                 cancellationToken,
                 ("$postId", input.PostId),
                 ("$agent", input.Agent),
-                ("$model", input.Model),
                 ("$value", input.Value),
                 ("$createdAt", FormatTimestamp(now)))
             .ConfigureAwait(false);
 
         await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
-        return new Vote(input.PostId, input.Agent, input.Model, input.Value, now);
+        return new Vote(input.PostId, input.Agent, input.Value, now);
     }
 
     public async Task<Verification> AddVerificationAsync(
@@ -413,9 +402,9 @@ public sealed partial class SqliteForumRepository : IForumRepository
                 transaction,
                 """
                 INSERT INTO verifications(
-                    post_id, outcome, note, branch, commit_hash, agent, model, effort, created_at)
+                    post_id, outcome, note, branch, commit_hash, agent, created_at)
                 VALUES (
-                    $postId, $outcome, $note, $branch, $commit, $agent, $model, $effort, $createdAt);
+                    $postId, $outcome, $note, $branch, $commit, $agent, $createdAt);
                 """,
                 cancellationToken,
                 ("$postId", input.PostId),
@@ -424,8 +413,6 @@ public sealed partial class SqliteForumRepository : IForumRepository
                 ("$branch", input.Branch),
                 ("$commit", input.Commit),
                 ("$agent", input.Agent),
-                ("$model", input.Model),
-                ("$effort", input.Effort),
                 ("$createdAt", timestamp))
             .ConfigureAwait(false);
 
@@ -441,8 +428,6 @@ public sealed partial class SqliteForumRepository : IForumRepository
             input.Branch,
             input.Commit,
             input.Agent,
-            input.Model,
-            input.Effort,
             now);
     }
 
@@ -797,7 +782,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT id, post_id, outcome, note, branch, commit_hash, agent, model, effort, created_at
+            SELECT id, post_id, outcome, note, branch, commit_hash, agent, created_at
             FROM verifications
             WHERE post_id = $postId
             ORDER BY created_at DESC, id DESC
@@ -817,9 +802,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
                 reader.GetString(4),
                 reader.GetString(5),
                 GetNullableString(reader, 6),
-                GetNullableString(reader, 7),
-                GetNullableString(reader, 8),
-                ParseTimestamp(reader.GetString(9))));
+                ParseTimestamp(reader.GetString(7))));
         }
 
         return verifications;
@@ -834,7 +817,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
-            SELECT id, post_id, content, branch, commit_hash, agent, model, effort, created_at
+            SELECT id, post_id, content, branch, commit_hash, agent, created_at
             FROM comments
             WHERE post_id = $postId
             ORDER BY created_at DESC, id DESC
@@ -853,9 +836,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
                 reader.GetString(3),
                 reader.GetString(4),
                 GetNullableString(reader, 5),
-                GetNullableString(reader, 6),
-                GetNullableString(reader, 7),
-                ParseTimestamp(reader.GetString(8))));
+                ParseTimestamp(reader.GetString(6))));
         }
 
         return comments;
@@ -991,10 +972,8 @@ public sealed partial class SqliteForumRepository : IForumRepository
         reader.GetString(4),
         reader.GetString(5),
         GetNullableString(reader, 6),
-        GetNullableString(reader, 7),
-        GetNullableString(reader, 8),
-        ParseTimestamp(reader.GetString(9)),
-        ParseTimestamp(reader.GetString(10)));
+        ParseTimestamp(reader.GetString(7)),
+        ParseTimestamp(reader.GetString(8)));
 
     private static PostSearchResult ReadSearchResult(SqliteDataReader reader) => new(
         reader.GetInt64(0),
@@ -1068,7 +1047,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
     private const string ReadPostSql = """
         SELECT
             p.id, p.repo, p.title, p.content, p.branch, p.commit_hash,
-            p.agent, p.model, p.effort, p.created_at, p.last_activity_at,
+            p.agent, p.created_at, p.last_activity_at,
             COALESCE((SELECT SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END) FROM votes WHERE post_id = p.id), 0),
             COALESCE((SELECT SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END) FROM votes WHERE post_id = p.id), 0),
             COALESCE((SELECT SUM(CASE WHEN outcome = 0 THEN 1 ELSE 0 END) FROM verifications WHERE post_id = p.id), 0),
@@ -1137,8 +1116,6 @@ public sealed partial class SqliteForumRepository : IForumRepository
             branch TEXT NOT NULL CHECK (length(trim(branch)) > 0),
             commit_hash TEXT NOT NULL CHECK (length(trim(commit_hash)) > 0),
             agent TEXT NULL,
-            model TEXT NULL,
-            effort TEXT NULL,
             created_at TEXT NOT NULL,
             last_activity_at TEXT NOT NULL
         ) STRICT;
@@ -1150,15 +1127,12 @@ public sealed partial class SqliteForumRepository : IForumRepository
             branch TEXT NOT NULL CHECK (length(trim(branch)) > 0),
             commit_hash TEXT NOT NULL CHECK (length(trim(commit_hash)) > 0),
             agent TEXT NULL,
-            model TEXT NULL,
-            effort TEXT NULL,
             created_at TEXT NOT NULL
         ) STRICT;
 
         CREATE TABLE IF NOT EXISTS votes (
             post_id INTEGER NOT NULL REFERENCES posts(id),
             agent TEXT NULL,
-            model TEXT NULL,
             value INTEGER NOT NULL CHECK (value IN (-1, 1)),
             created_at TEXT NOT NULL
         ) STRICT;
@@ -1171,8 +1145,6 @@ public sealed partial class SqliteForumRepository : IForumRepository
             branch TEXT NOT NULL CHECK (length(trim(branch)) > 0),
             commit_hash TEXT NOT NULL CHECK (length(trim(commit_hash)) > 0),
             agent TEXT NULL,
-            model TEXT NULL,
-            effort TEXT NULL,
             created_at TEXT NOT NULL
         ) STRICT;
 

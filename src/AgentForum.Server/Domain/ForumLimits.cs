@@ -10,8 +10,6 @@ public static class ForumLimits
     public const int MaxBranchLength = 255;
     public const int MaxCommitLength = 64;
     public const int MaxAgentLength = 200;
-    public const int MaxModelLength = 200;
-    public const int MaxEffortLength = 100;
 
     public const int DefaultSearchLimit = 10;
     public const int MaxSearchLimit = 50;

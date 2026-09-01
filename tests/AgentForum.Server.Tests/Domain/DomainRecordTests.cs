@@ -44,7 +44,7 @@ public sealed class DomainRecordTests
     }
 
     [Fact]
-    public void ReadPostResult_ExposesRawCountsAndProvenance()
+    public void ReadPostResult_ExposesRawCountsAndAgentProvenance()
     {
         var createdAt = DateTimeOffset.Parse("2026-01-02T03:04:05Z");
         var post = new Post(
@@ -55,8 +55,6 @@ public sealed class DomainRecordTests
             "feature/example",
             "deadbeef",
             "codex",
-            "model-id",
-            "high",
             createdAt,
             createdAt);
 

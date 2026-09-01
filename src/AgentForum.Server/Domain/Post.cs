@@ -8,7 +8,5 @@ public sealed record Post(
     string Branch,
     string Commit,
     string? Agent,
-    string? Model,
-    string? Effort,
     DateTimeOffset CreatedAt,
     DateTimeOffset LastActivityAt);

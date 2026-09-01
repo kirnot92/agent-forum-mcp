@@ -127,22 +127,18 @@ public sealed class ForumWebEndpointsTests
             "line one\nline two <b>not markup</b>",
             "branch\" onfocus=\"alert(2)",
             "commit<&>",
-            "agent<&>",
-            "model\"bad",
-            "effort<script>"));
+            "agent<&>"));
 
-        await fixture.Service.VotePostAsync(new VotePostInput(post.Id, 1, "vote-agent-1", "vote-model-1"));
-        await fixture.Service.VotePostAsync(new VotePostInput(post.Id, 1, "vote-agent-2", "vote-model-2"));
-        await fixture.Service.VotePostAsync(new VotePostInput(post.Id, -1, "vote-agent-3", "vote-model-3"));
+        await fixture.Service.VotePostAsync(new VotePostInput(post.Id, 1, "vote-agent-1"));
+        await fixture.Service.VotePostAsync(new VotePostInput(post.Id, 1, "vote-agent-2"));
+        await fixture.Service.VotePostAsync(new VotePostInput(post.Id, -1, "vote-agent-3"));
 
         await fixture.Service.CreateCommentAsync(new CreateCommentInput(
             post.Id,
             "comment <img src=x onerror=alert(3)>\nsecond line",
             "comment-branch",
             "comment-commit",
-            "comment-agent",
-            "comment-model",
-            "comment-effort"));
+            "comment-agent"));
 
         for (var index = 1; index <= 11; index++)
         {
@@ -152,9 +148,7 @@ public sealed class ForumWebEndpointsTests
                 index == 11 ? "changed <script>alert(4)</script>" : $"verification {index}",
                 $"verify-branch-{index}",
                 $"verify-commit-{index}",
-                $"verify-agent-{index}",
-                $"verify-model-{index}",
-                $"verify-effort-{index}"));
+                $"verify-agent-{index}"));
         }
 
         using var response = await fixture.Client.GetAsync($"/posts/{post.Id}");
@@ -174,15 +168,15 @@ public sealed class ForumWebEndpointsTests
         Assert.Contains("verification 2", html);
         Assert.Contains("WorkedWithChanges", html);
         Assert.Contains("changed &lt;script&gt;alert(4)&lt;/script&gt;", html);
-        Assert.Contains("comment-model", html);
-        Assert.Contains("verify-effort-11", html);
+        Assert.Contains("comment-agent", html);
+        Assert.Contains("verify-agent-11", html);
         Assert.Contains("<dt>Post ID</dt>", html);
         Assert.Contains("<dt>Repository</dt>", html);
         Assert.Contains("<dt>Branch</dt>", html);
         Assert.Contains("<dt>Commit</dt>", html);
         Assert.Contains("<dt>Agent</dt>", html);
-        Assert.Contains("<dt>Model</dt>", html);
-        Assert.Contains("<dt>Effort</dt>", html);
+        Assert.DoesNotContain("<dt>Model</dt>", html);
+        Assert.DoesNotContain("<dt>Effort</dt>", html);
         Assert.Contains("<dt>Created</dt>", html);
         Assert.Contains("<dt>Last activity</dt>", html);
         Assert.Contains("<dt>Upvotes</dt><dd>2</dd>", html);
@@ -337,9 +331,7 @@ public sealed class ForumWebEndpointsTests
                 content,
                 "main",
                 "0123456789abcdef",
-                "web-test-agent",
-                "web-test-model",
-                "medium"));
+                "web-test-agent"));
 
         public void RemoveDatabaseForFailureTest()
         {

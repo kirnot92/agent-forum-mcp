@@ -195,8 +195,6 @@ internal static class ForumHtml
         AppendCompactItem(body, "Branch", post.Branch, true);
         AppendCompactItem(body, "Commit", post.Commit, true);
         AppendCompactItem(body, "Agent", Display(post.Agent), false);
-        AppendCompactItem(body, "Model", Display(post.Model), true);
-        AppendCompactItem(body, "Effort", Display(post.Effort), true);
         AppendCompactItem(body, "Created", Time(post.CreatedAt), false, alreadyHtml: true);
         AppendCompactItem(body, "Last activity", Time(post.LastActivityAt), false, alreadyHtml: true);
         body.Append("</dl>");
@@ -284,7 +282,7 @@ internal static class ForumHtml
             .Append(Time(comment.CreatedAt)).Append("</div>")
             .Append("<div class=\"prose\">").Append(E(comment.Content)).Append("</div>")
             .Append("<div class=\"meta-row\">");
-        AppendActivityProvenance(body, comment.Branch, comment.Commit, comment.Agent, comment.Model, comment.Effort);
+        AppendActivityProvenance(body, comment.Branch, comment.Commit, comment.Agent);
         body.Append("</div></article></li>");
     }
 
@@ -305,9 +303,7 @@ internal static class ForumHtml
             body,
             verification.Branch,
             verification.Commit,
-            verification.Agent,
-            verification.Model,
-            verification.Effort);
+            verification.Agent);
         body.Append("</div></article></li>");
     }
 
@@ -315,15 +311,11 @@ internal static class ForumHtml
         StringBuilder body,
         string branch,
         string commit,
-        string? agent,
-        string? model,
-        string? effort)
+        string? agent)
     {
         body.Append("<span>branch <span class=\"mono\">").Append(E(branch)).Append("</span></span>")
             .Append("<span>commit <span class=\"mono\">").Append(E(commit)).Append("</span></span>")
-            .Append("<span>agent ").Append(E(Display(agent))).Append("</span>")
-            .Append("<span>model <span class=\"mono\">").Append(E(Display(model))).Append("</span></span>")
-            .Append("<span>effort <span class=\"mono\">").Append(E(Display(effort))).Append("</span></span>");
+            .Append("<span>agent ").Append(E(Display(agent))).Append("</span>");
     }
 
     private static string OutcomeClass(VerificationOutcome outcome)

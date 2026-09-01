@@ -71,10 +71,7 @@ public sealed class ForumToolsContractTests
             ("title", typeof(string), false, null, NullabilityState.NotNull, ToolContract.TitleDescription),
             ("content", typeof(string), false, null, NullabilityState.NotNull, ToolContract.ContentDescription),
             ("branch", typeof(string), false, null, NullabilityState.NotNull, ToolContract.BranchDescription),
-            ("commit", typeof(string), false, null, NullabilityState.NotNull, ToolContract.CommitDescription),
-            ("agent", typeof(string), true, null, NullabilityState.Nullable, ToolContract.AgentDescription),
-            ("model", typeof(string), true, null, NullabilityState.Nullable, ToolContract.ModelDescription),
-            ("effort", typeof(string), true, null, NullabilityState.Nullable, ToolContract.EffortDescription));
+            ("commit", typeof(string), false, null, NullabilityState.NotNull, ToolContract.CommitDescription));
 
         AssertMethod(
             methods["search_posts"],
@@ -94,10 +91,7 @@ public sealed class ForumToolsContractTests
             ("post_id", typeof(long), false, null, NullabilityState.NotNull, CommentPostIdDescription),
             ("content", typeof(string), false, null, NullabilityState.NotNull, CommentContentDescription),
             ("branch", typeof(string), false, null, NullabilityState.NotNull, ToolContract.BranchDescription),
-            ("commit", typeof(string), false, null, NullabilityState.NotNull, ToolContract.CommitDescription),
-            ("agent", typeof(string), true, null, NullabilityState.Nullable, ToolContract.AgentDescription),
-            ("model", typeof(string), true, null, NullabilityState.Nullable, ToolContract.ModelDescription),
-            ("effort", typeof(string), true, null, NullabilityState.Nullable, ToolContract.EffortDescription));
+            ("commit", typeof(string), false, null, NullabilityState.NotNull, ToolContract.CommitDescription));
 
         AssertMethod(
             methods["read_comments"],
@@ -110,9 +104,7 @@ public sealed class ForumToolsContractTests
             methods["vote_post"],
             typeof(Task<Vote>),
             ("post_id", typeof(long), false, null, NullabilityState.NotNull, VotePostIdDescription),
-            ("value", typeof(int), false, null, NullabilityState.NotNull, VoteValueDescription),
-            ("agent", typeof(string), true, null, NullabilityState.Nullable, ToolContract.AgentDescription),
-            ("model", typeof(string), true, null, NullabilityState.Nullable, ToolContract.ModelDescription));
+            ("value", typeof(int), false, null, NullabilityState.NotNull, VoteValueDescription));
 
         AssertMethod(
             methods["verify_post"],
@@ -121,10 +113,16 @@ public sealed class ForumToolsContractTests
             ("outcome", typeof(VerificationOutcome), false, null, NullabilityState.NotNull, VerificationOutcomeDescription),
             ("branch", typeof(string), false, null, NullabilityState.NotNull, ToolContract.BranchDescription),
             ("commit", typeof(string), false, null, NullabilityState.NotNull, ToolContract.CommitDescription),
-            ("note", typeof(string), true, null, NullabilityState.Nullable, VerificationNoteDescription),
-            ("agent", typeof(string), true, null, NullabilityState.Nullable, ToolContract.AgentDescription),
-            ("model", typeof(string), true, null, NullabilityState.Nullable, ToolContract.ModelDescription),
-            ("effort", typeof(string), true, null, NullabilityState.Nullable, ToolContract.EffortDescription));
+            ("note", typeof(string), true, null, NullabilityState.Nullable, VerificationNoteDescription));
+
+        foreach (var (name, method) in methods)
+        {
+            var parameters = method.GetParameters();
+            Assert.Single(parameters, parameter => parameter.ParameterType == typeof(CancellationToken));
+            Assert.Equal(
+                IsReadOnly(name) ? 0 : 1,
+                parameters.Count(parameter => parameter.ParameterType == typeof(McpServer)));
+        }
     }
 
     [Fact]
@@ -132,8 +130,7 @@ public sealed class ForumToolsContractTests
     {
         foreach (var method in ToolMethods().Values)
         {
-            var parameters = method.GetParameters();
-            var toolParameters = parameters[..^1];
+            var toolParameters = ToolParameters(method);
             var schema = CreateProtocolTool(method).InputSchema;
             var properties = schema.GetProperty("properties");
             var required = schema.TryGetProperty("required", out var requiredElement)
@@ -142,6 +139,7 @@ public sealed class ForumToolsContractTests
 
             Assert.Equal(toolParameters.Select(parameter => parameter.Name), PropertyNames(properties));
             Assert.False(properties.TryGetProperty("cancellationToken", out _));
+            Assert.False(properties.TryGetProperty("server", out _));
 
             foreach (var parameter in toolParameters)
             {
@@ -175,41 +173,17 @@ public sealed class ForumToolsContractTests
     }
 
     [Fact]
-    public void ProvenanceDescriptionsRequireExactExplicitRuntimeValues()
+    public void MutationSchemasDoNotExposeInjectedOrRemovedProvenanceFields()
     {
-        Assert.Equal(ExpectedModelDescription, ToolContract.ModelDescription);
-        Assert.Equal(ExpectedEffortDescription, ToolContract.EffortDescription);
-
-        Assert.Contains("coding-agent model", ToolContract.ModelDescription, StringComparison.Ordinal);
-        Assert.Contains("not the forum's embedding model", ToolContract.ModelDescription, StringComparison.Ordinal);
-
-        foreach (var description in new[] { ToolContract.ModelDescription, ToolContract.EffortDescription })
+        foreach (var toolName in new[] { "create_post", "create_comment", "vote_post", "verify_post" })
         {
-            Assert.Contains("current coding-agent runtime session", description, StringComparison.Ordinal);
-            Assert.Contains("explicitly exposes it", description, StringComparison.Ordinal);
-            Assert.Contains("Never infer, abbreviate, rename, or normalize", description, StringComparison.Ordinal);
-            Assert.Contains("omit this field when it is unavailable", description, StringComparison.Ordinal);
-            Assert.Contains("Provenance only; not a confidence or authority signal", description, StringComparison.Ordinal);
+            var properties = CreateProtocolTool(ToolMethods()[toolName]).InputSchema.GetProperty("properties");
+            Assert.False(properties.TryGetProperty("agent", out _));
+            Assert.False(properties.TryGetProperty("model", out _));
+            Assert.False(properties.TryGetProperty("effort", out _));
+            Assert.False(properties.TryGetProperty("server", out _));
+            Assert.False(properties.TryGetProperty("cancellationToken", out _));
         }
-    }
-
-    [Fact]
-    public void FactorySchemasPropagateExactProvenancePoliciesToEveryAcceptingTool()
-    {
-        AssertSchemaDescriptions(
-            "model",
-            ExpectedModelDescription,
-            "create_post",
-            "create_comment",
-            "vote_post",
-            "verify_post");
-
-        AssertSchemaDescriptions(
-            "effort",
-            ExpectedEffortDescription,
-            "create_post",
-            "create_comment",
-            "verify_post");
     }
 
     [Fact]
@@ -222,24 +196,13 @@ public sealed class ForumToolsContractTests
             [("create_post", "content")] = ForumLimits.MaxPostContentLength,
             [("create_post", "branch")] = ForumLimits.MaxBranchLength,
             [("create_post", "commit")] = ForumLimits.MaxCommitLength,
-            [("create_post", "agent")] = ForumLimits.MaxAgentLength,
-            [("create_post", "model")] = ForumLimits.MaxModelLength,
-            [("create_post", "effort")] = ForumLimits.MaxEffortLength,
             [("search_posts", "repo")] = ForumLimits.MaxRepoLength,
             [("create_comment", "content")] = ForumLimits.MaxCommentContentLength,
             [("create_comment", "branch")] = ForumLimits.MaxBranchLength,
             [("create_comment", "commit")] = ForumLimits.MaxCommitLength,
-            [("create_comment", "agent")] = ForumLimits.MaxAgentLength,
-            [("create_comment", "model")] = ForumLimits.MaxModelLength,
-            [("create_comment", "effort")] = ForumLimits.MaxEffortLength,
-            [("vote_post", "agent")] = ForumLimits.MaxAgentLength,
-            [("vote_post", "model")] = ForumLimits.MaxModelLength,
             [("verify_post", "branch")] = ForumLimits.MaxBranchLength,
             [("verify_post", "commit")] = ForumLimits.MaxCommitLength,
             [("verify_post", "note")] = ForumLimits.MaxVerificationNoteLength,
-            [("verify_post", "agent")] = ForumLimits.MaxAgentLength,
-            [("verify_post", "model")] = ForumLimits.MaxModelLength,
-            [("verify_post", "effort")] = ForumLimits.MaxEffortLength,
         };
 
         foreach (var ((tool, parameter), maximum) in expected)
@@ -266,24 +229,6 @@ public sealed class ForumToolsContractTests
         return McpServerTool.Create(method, target).ProtocolTool;
     }
 
-    private static void AssertSchemaDescriptions(
-        string parameterName,
-        string expectedDescription,
-        params string[] toolNames)
-    {
-        var methods = ToolMethods();
-
-        foreach (var toolName in toolNames)
-        {
-            var property = CreateProtocolTool(methods[toolName])
-                .InputSchema
-                .GetProperty("properties")
-                .GetProperty(parameterName);
-
-            Assert.Equal(expectedDescription, property.GetProperty("description").GetString());
-        }
-    }
-
     private static void AssertMethod(
         MethodInfo method,
         Type returnType,
@@ -291,8 +236,8 @@ public sealed class ForumToolsContractTests
     {
         Assert.Equal(returnType, method.ReturnType);
 
-        var parameters = method.GetParameters();
-        Assert.Equal(expected.Length + 1, parameters.Length);
+        var parameters = ToolParameters(method);
+        Assert.Equal(expected.Length, parameters.Length);
 
         for (var index = 0; index < expected.Length; index++)
         {
@@ -311,11 +256,19 @@ public sealed class ForumToolsContractTests
             Assert.Equal(contract.Description, Description(actual));
         }
 
-        var cancellationToken = parameters[^1];
+        var cancellationToken = Assert.Single(
+            method.GetParameters(),
+            parameter => parameter.ParameterType == typeof(CancellationToken));
         Assert.Equal("cancellationToken", cancellationToken.Name);
         Assert.Equal(typeof(CancellationToken), cancellationToken.ParameterType);
         Assert.True(cancellationToken.HasDefaultValue);
     }
+
+    private static ParameterInfo[] ToolParameters(MethodInfo method) =>
+        method.GetParameters()
+            .Where(parameter => parameter.ParameterType != typeof(McpServer) &&
+                parameter.ParameterType != typeof(CancellationToken))
+            .ToArray();
 
     private static string Description(MemberInfo member) =>
         Assert.IsType<DescriptionAttribute>(member.GetCustomAttribute<DescriptionAttribute>()).Description;
@@ -405,10 +358,4 @@ public sealed class ForumToolsContractTests
 
     private const string VerificationNoteDescription =
         "Optional evidence for WorkedAsWritten; required details of changes or failure for the other outcomes.";
-
-    private const string ExpectedModelDescription =
-        "Optional exact model identifier for the current coding-agent runtime session, only when that runtime explicitly exposes it. This is the coding-agent model, not the forum's embedding model. Never infer, abbreviate, rename, or normalize the value; omit this field when it is unavailable. Provenance only; not a confidence or authority signal.";
-
-    private const string ExpectedEffortDescription =
-        "Optional exact reasoning/inference effort value for the current coding-agent runtime session, only when that runtime explicitly exposes it. Never infer, abbreviate, rename, or normalize the value; omit this field when it is unavailable. Provenance only; not a confidence or authority signal.";
 }

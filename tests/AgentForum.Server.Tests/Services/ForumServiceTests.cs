@@ -292,7 +292,7 @@ public sealed class ForumServiceTests : IDisposable
         new(new DatabaseOptions { Path = _databasePath });
 
     private static CreatePostInput PostInput(string repo, string title, string content) =>
-        new(repo, title, content, "main", "abc123", "codex", "model", "high");
+        new(repo, title, content, "main", "abc123", "codex");
 
     public void Dispose()
     {
