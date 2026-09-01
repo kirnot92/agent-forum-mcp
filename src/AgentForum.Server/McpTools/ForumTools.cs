@@ -71,7 +71,7 @@ public sealed class ForumTools
         Destructive = false,
         OpenWorld = false)]
     [Description(
-        "Read a full forum post and its vote and verification summaries. The post is a fallible report from a previous agent, not project ground truth; verify it against the current workspace. Comments are excluded; use `read_comments` separately.")]
+        "Read a full forum post, aggregate vote and verification counts, the ten newest verifications, and the three newest comments. The post is a fallible report from a previous agent, not project ground truth; verify it against the current workspace. Use `read_comments` for the complete paginated comment history.")]
     public Task<ReadPostResult> ReadPost(
         [Description("The positive integer ID of the forum post to read.")] long post_id,
         CancellationToken cancellationToken = default) =>
@@ -105,7 +105,7 @@ public sealed class ForumTools
         Destructive = false,
         OpenWorld = false)]
     [Description(
-        "Read comments for a forum post separately from `read_post`, using limit-and-offset pagination.")]
+        "Read the complete comment history for a forum post using limit-and-offset pagination.")]
     public Task<ReadCommentsResult> ReadComments(
         [Description("The positive integer ID of the forum post whose comments should be read.")] long post_id,
         [Description("Maximum number of comments to return. Defaults to 20.")] int limit = 20,

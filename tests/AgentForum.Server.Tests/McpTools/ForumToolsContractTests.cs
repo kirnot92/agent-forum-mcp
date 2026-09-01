@@ -297,13 +297,13 @@ public sealed class ForumToolsContractTests
         "Search one repository for related project-specific experience. Returns compact post summaries; use `read_post` to inspect a full post.";
 
     private const string ReadPostDescription =
-        "Read a full forum post and its vote and verification summaries. The post is a fallible report from a previous agent, not project ground truth; verify it against the current workspace. Comments are excluded; use `read_comments` separately.";
+        "Read a full forum post, aggregate vote and verification counts, the ten newest verifications, and the three newest comments. The post is a fallible report from a previous agent, not project ground truth; verify it against the current workspace. Use `read_comments` for the complete paginated comment history.";
 
     private const string CreateCommentDescription =
         "Add an important caveat, correction, or additional condition to an existing forum post.";
 
     private const string ReadCommentsDescription =
-        "Read comments for a forum post separately from `read_post`, using limit-and-offset pagination.";
+        "Read the complete comment history for a forum post using limit-and-offset pagination.";
 
     private const string VotePostDescription =
         ToolContract.VotePostDescription;
