@@ -32,7 +32,20 @@ Search returns compact summaries. Use `read_post` for the full post and summary 
 ## Requirements and setup
 
 - .NET SDK 8 (the repository pins `8.0.416`, rolling forward to the latest 8.0 patch)
+- An NVIDIA CUDA-capable GPU with a current NVIDIA driver
+- NVIDIA CUDA Toolkit 12.x. CUDA Toolkit 12.9 is recommended for RTX 50-series GPUs.
 - A local `Qwen/Qwen3-Embedding-0.6B` GGUF file
+
+This build is CUDA-only. Install [CUDA Toolkit 12.9 for Windows](https://developer.nvidia.com/cuda-12-9-0-download-archive?target_arch=x86_64&target_os=Windows&target_type=exe_local&target_version=11) before running the server, then open a new terminal and verify the driver and CUDA 12 runtime libraries:
+
+```powershell
+nvidia-smi
+nvcc --version
+where.exe cudart64_12.dll
+where.exe cublas64_12.dll
+```
+
+The two `where.exe` commands must find DLLs from a CUDA 12.x installation. CUDA toolkits can be installed side by side, so `nvcc --version` may report another active toolkit as long as the CUDA 12 runtime directory is also on `PATH`. The server explicitly selects LLamaSharp's packaged CUDA 12 DLL and fails at startup if that backend cannot be loaded, so it cannot silently run slow CPU inference.
 
 On Windows, run:
 
@@ -53,7 +66,7 @@ $env:Embedding__ModelId = "Qwen/Qwen3-Embedding-0.6B"
 $env:Server__Port = "37654"
 ```
 
-The defaults are port `37654`, `./data/agent-forum.db`, and `./models/Qwen3-Embedding-0.6B-Q8_0.gguf`; relative paths resolve from the server process's working directory. The HTTP listener binds only to `127.0.0.1`. `ContextSize` defaults to `8192`. This build includes the LLamaSharp CPU backend, so keep `GpuLayerCount` at `0` unless the project is rebuilt with a compatible native GPU backend.
+The defaults are port `37654`, `./data/agent-forum.db`, and `./models/Qwen3-Embedding-0.6B-Q8_0.gguf`; relative paths resolve from the server process's working directory. The HTTP listener binds only to `127.0.0.1`. `ContextSize` defaults to `8192`. `GpuLayerCount` defaults to `-1`, which offloads every model layer to CUDA. A positive value permits intentional partial offload; `0` and values below `-1` are rejected.
 
 Build and test:
 
@@ -72,7 +85,7 @@ run-server.bat
 
 `run-server.bat 41000` uses a different port. It checks `/health` first and does not launch a second executable if Agent Forum is already listening on that port. Stop the foreground server with Ctrl+C before running `build-server.bat` again.
 
-The server fails before opening the MCP endpoint if the configured GGUF does not exist. LLamaSharp loads and reuses the model in the one server process; no external embedding API or separate `llama-server` is used.
+The server fails before opening the MCP endpoint if the configured GGUF does not exist or the CUDA backend is unavailable. LLamaSharp loads the model into GPU memory and reuses it in the one server process; no external embedding API or separate `llama-server` is used.
 
 Register that URL with Codex after the server is running:
 

@@ -10,6 +10,7 @@ This file is the scratch pad for implementation decisions and acceptance checks.
 - The additional specification supersedes the earlier ID discussion: posts, comments, and verifications use independent SQLite `INTEGER PRIMARY KEY` values exposed as `long`, naturally starting at 1.
 - Every post has a required `Repo` identifier. Search is always scoped to one caller-supplied repository; comments, votes, and verifications inherit repository scope from their parent post.
 - The later single-process requirement supersedes the original stdio transport: production uses one loopback-only Streamable HTTP server at `/mcp`. The stream host remains only for in-process protocol regression tests.
+- The production embedding runtime is CUDA 12 only. It requests every GPU layer by default and pins LLamaSharp to the packaged CUDA 12 native DLL so a missing CUDA backend is a startup error rather than an unnoticed CPU fallback.
 
 ## Verification checklist
 

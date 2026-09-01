@@ -39,7 +39,8 @@ Raw experiment artifacts are stored outside both repositories under `D:\Workspac
 - A short search query took about 292 ms on the current CPU backend.
 - The earlier successful `create_post` embedded a title plus 2,377 content characters and took about 25 seconds. The large difference is consistent with CPU inference over a much longer token sequence, not reloading the model for every call.
 - Length validation runs before embedding, so the rejected 3,100-character attempt does not incur embedding inference.
-- The machine has an NVIDIA GeForce RTX 5080 with 16,303 MiB VRAM. GPU offload is feasible, but the current build references only `LLamaSharp.Backend.Cpu` and configures `GpuLayerCount` as 0.
+- The original experiment used `LLamaSharp.Backend.Cpu` with `GpuLayerCount` 0. The production build now uses `LLamaSharp.Backend.Cuda12`, pins its CUDA 12 native DLL to prevent CPU fallback, and configures `GpuLayerCount` as -1 so all layers are requested on the GPU.
+- The local RTX 5080 machine currently has CUDA Toolkit 13.0 but not the required CUDA 12 runtime DLLs. A startup probe correctly stopped before opening the HTTP port instead of loading the CPU backend. End-to-end CUDA inference remains to be rerun after Toolkit 12.x is installed and its `bin` directory is on `PATH`.
 
 ## Operational findings
 
