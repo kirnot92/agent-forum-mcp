@@ -13,6 +13,65 @@ public sealed class ForumServiceTests : IDisposable
         $"agent-forum-service-{Guid.NewGuid():N}.db");
 
     [Fact]
+    public async Task Initialize_WithNoStoredEmbeddingModelIds_Continues()
+    {
+        var provider = new RecordingEmbeddingProvider(_ => [1f]);
+        var repository = CreateRepository();
+        var service = CreateService(repository, provider);
+
+        await service.InitializeAsync();
+
+        Assert.Empty(provider.Texts);
+    }
+
+    [Fact]
+    public async Task Initialize_WithMatchingEmbeddingModelId_Continues()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+        await repository.CreatePostAsync(PostInput("repo-a", "post", "content"), [1f], ModelId);
+        var provider = new RecordingEmbeddingProvider(_ => [1f]);
+        var service = CreateService(repository, provider);
+
+        await service.InitializeAsync();
+
+        Assert.Empty(provider.Texts);
+    }
+
+    [Fact]
+    public async Task Initialize_WithDifferentEmbeddingModelId_FailsClearly()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+        await repository.CreatePostAsync(PostInput("repo-a", "post", "content"), [1f], "previous-model");
+        var service = CreateService(repository, new RecordingEmbeddingProvider(_ => [1f]));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.InitializeAsync());
+
+        Assert.Contains("previous-model", exception.Message, StringComparison.Ordinal);
+        Assert.Contains(ModelId, exception.Message, StringComparison.Ordinal);
+        Assert.Contains("original embedding model", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("rebuild/reindex", exception.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task Initialize_WithMixedEmbeddingModelIds_FailsClearly()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+        await repository.CreatePostAsync(PostInput("repo-a", "matching", "content"), [1f], ModelId);
+        await repository.CreatePostAsync(PostInput("repo-a", "different", "content"), [1f], "previous-model");
+        var service = CreateService(repository, new RecordingEmbeddingProvider(_ => [1f]));
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.InitializeAsync());
+
+        Assert.Contains(ModelId, exception.Message, StringComparison.Ordinal);
+        Assert.Contains("previous-model", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task CreatePost_EmbedsOnlyTitleBlankLineAndContentBeforePersistence()
     {
         var provider = new RecordingEmbeddingProvider(_ => [3f, 4f]);
@@ -24,6 +83,26 @@ public sealed class ForumServiceTests : IDisposable
         var stored = Assert.Single(await CreateRepository().ReadStoredEmbeddingsAsync("repo-a", ModelId));
         Assert.Equal([0.6f, 0.8f], stored.Vector);
         Assert.Equal(post.Id, stored.PostId);
+    }
+
+    [Fact]
+    public async Task CreateAndSearch_NormalizeEquivalentGitHubRepositoryForms()
+    {
+        var provider = new RecordingEmbeddingProvider(_ => [1f]);
+        var service = await CreateServiceAsync(provider);
+
+        var post = await service.CreatePostAsync(
+            PostInput(" git@github.com:Owner/Repo.git ", "canonical", "repository key"));
+        var results = await service.SearchPostsAsync(
+            "https://github.com/OWNER/REPO/",
+            "repository");
+
+        Assert.Equal("owner/repo", post.Repo);
+        Assert.Equal(post.Id, Assert.Single(results).PostId);
+        Assert.Equal("owner/repo", results[0].Repo);
+        Assert.Equal(
+            "canonical\n\nrepository key",
+            provider.Texts[0]);
     }
 
     [Fact]
@@ -123,13 +202,18 @@ public sealed class ForumServiceTests : IDisposable
     private async Task<ForumService> CreateServiceAsync(IEmbeddingProvider provider)
     {
         var repository = CreateRepository();
-        var service = new ForumService(
-            repository,
-            provider,
-            new EmbeddingOptions { ModelId = ModelId });
+        var service = CreateService(repository, provider);
         await service.InitializeAsync();
         return service;
     }
+
+    private static ForumService CreateService(
+        IForumRepository repository,
+        IEmbeddingProvider provider) =>
+        new(
+            repository,
+            provider,
+            new EmbeddingOptions { ModelId = ModelId });
 
     private SqliteForumRepository CreateRepository() =>
         new(new DatabaseOptions { Path = _databasePath });

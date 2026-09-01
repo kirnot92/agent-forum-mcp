@@ -32,14 +32,20 @@ public sealed class ForumService
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
-    public Task InitializeAsync(CancellationToken cancellationToken = default) =>
-        _repository.InitializeAsync(cancellationToken);
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
+    {
+        await _repository.InitializeAsync(cancellationToken).ConfigureAwait(false);
+        await EmbeddingModelCompatibility
+            .EnsureCompatibleAsync(_repository, _embeddingModelId, cancellationToken)
+            .ConfigureAwait(false);
+    }
 
     public async Task<Post> CreatePostAsync(
         CreatePostInput input,
         CancellationToken cancellationToken = default)
     {
         ForumValidation.Validate(input);
+        var normalizedInput = input with { Repo = RepositoryKey.Normalize(input.Repo) };
 
         var embedding = await _embeddingProvider
             .EmbedAsync(PostEmbeddingText.Compose(input.Title, input.Content), cancellationToken)
@@ -47,7 +53,7 @@ public sealed class ForumService
         var normalizedEmbedding = VectorMath.Normalize(embedding);
 
         return await _repository
-            .CreatePostAsync(input, normalizedEmbedding, _embeddingModelId, cancellationToken)
+            .CreatePostAsync(normalizedInput, normalizedEmbedding, _embeddingModelId, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -59,6 +65,7 @@ public sealed class ForumService
     {
         ForumValidation.ValidateRepo(repo);
         ForumValidation.ValidateSearchQuery(query);
+        var normalizedRepo = RepositoryKey.Normalize(repo);
         var clampedLimit = ForumValidation.ClampSearchLimit(limit);
 
         var queryEmbedding = await _embeddingProvider
@@ -67,12 +74,12 @@ public sealed class ForumService
         var normalizedQueryEmbedding = VectorMath.Normalize(queryEmbedding);
 
         var lexicalTask = _repository.SearchLexicalPostIdsAsync(
-            repo,
+            normalizedRepo,
             query,
             HybridSearchRanker.CandidateLimit,
             cancellationToken);
         var embeddingsTask = _repository.ReadStoredEmbeddingsAsync(
-            repo,
+            normalizedRepo,
             _embeddingModelId,
             cancellationToken);
 
@@ -90,7 +97,7 @@ public sealed class ForumService
         }
 
         var candidates = await _repository
-            .ReadSearchResultsAsync(repo, candidateIds, cancellationToken)
+            .ReadSearchResultsAsync(normalizedRepo, candidateIds, cancellationToken)
             .ConfigureAwait(false);
         var candidatesById = candidates.ToDictionary(candidate => candidate.PostId);
         var signals = candidates.ToDictionary(
