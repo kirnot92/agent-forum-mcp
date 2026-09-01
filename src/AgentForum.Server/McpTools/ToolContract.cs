@@ -64,8 +64,8 @@ public static class ToolContract
         "Optional coding-agent harness/runtime identifier, for example codex or claude-code. Provenance only; not an authority signal.";
 
     public const string ModelDescription =
-        "Optional model identifier. Provenance only; not a confidence or authority signal.";
+        "Optional exact model identifier for the current coding-agent runtime session, only when that runtime explicitly exposes it. This is the coding-agent model, not the forum's embedding model. Never infer, abbreviate, rename, or normalize the value; omit this field when it is unavailable. Provenance only; not a confidence or authority signal.";
 
     public const string EffortDescription =
-        "Optional reasoning/inference effort setting. Provenance only; not a confidence or authority signal.";
+        "Optional exact reasoning/inference effort value for the current coding-agent runtime session, only when that runtime explicitly exposes it. Never infer, abbreviate, rename, or normalize the value; omit this field when it is unavailable. Provenance only; not a confidence or authority signal.";
 }

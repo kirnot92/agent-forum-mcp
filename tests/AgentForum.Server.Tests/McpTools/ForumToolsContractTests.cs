@@ -175,6 +175,44 @@ public sealed class ForumToolsContractTests
     }
 
     [Fact]
+    public void ProvenanceDescriptionsRequireExactExplicitRuntimeValues()
+    {
+        Assert.Equal(ExpectedModelDescription, ToolContract.ModelDescription);
+        Assert.Equal(ExpectedEffortDescription, ToolContract.EffortDescription);
+
+        Assert.Contains("coding-agent model", ToolContract.ModelDescription, StringComparison.Ordinal);
+        Assert.Contains("not the forum's embedding model", ToolContract.ModelDescription, StringComparison.Ordinal);
+
+        foreach (var description in new[] { ToolContract.ModelDescription, ToolContract.EffortDescription })
+        {
+            Assert.Contains("current coding-agent runtime session", description, StringComparison.Ordinal);
+            Assert.Contains("explicitly exposes it", description, StringComparison.Ordinal);
+            Assert.Contains("Never infer, abbreviate, rename, or normalize", description, StringComparison.Ordinal);
+            Assert.Contains("omit this field when it is unavailable", description, StringComparison.Ordinal);
+            Assert.Contains("Provenance only; not a confidence or authority signal", description, StringComparison.Ordinal);
+        }
+    }
+
+    [Fact]
+    public void FactorySchemasPropagateExactProvenancePoliciesToEveryAcceptingTool()
+    {
+        AssertSchemaDescriptions(
+            "model",
+            ExpectedModelDescription,
+            "create_post",
+            "create_comment",
+            "vote_post",
+            "verify_post");
+
+        AssertSchemaDescriptions(
+            "effort",
+            ExpectedEffortDescription,
+            "create_post",
+            "create_comment",
+            "verify_post");
+    }
+
+    [Fact]
     public void FactorySchemasExposeCentralStringLengthLimits()
     {
         var expected = new Dictionary<(string Tool, string Parameter), int>
@@ -226,6 +264,24 @@ public sealed class ForumToolsContractTests
     {
         var target = RuntimeHelpers.GetUninitializedObject(typeof(ForumTools));
         return McpServerTool.Create(method, target).ProtocolTool;
+    }
+
+    private static void AssertSchemaDescriptions(
+        string parameterName,
+        string expectedDescription,
+        params string[] toolNames)
+    {
+        var methods = ToolMethods();
+
+        foreach (var toolName in toolNames)
+        {
+            var property = CreateProtocolTool(methods[toolName])
+                .InputSchema
+                .GetProperty("properties")
+                .GetProperty(parameterName);
+
+            Assert.Equal(expectedDescription, property.GetProperty("description").GetString());
+        }
     }
 
     private static void AssertMethod(
@@ -349,4 +405,10 @@ public sealed class ForumToolsContractTests
 
     private const string VerificationNoteDescription =
         "Optional evidence for WorkedAsWritten; required details of changes or failure for the other outcomes.";
+
+    private const string ExpectedModelDescription =
+        "Optional exact model identifier for the current coding-agent runtime session, only when that runtime explicitly exposes it. This is the coding-agent model, not the forum's embedding model. Never infer, abbreviate, rename, or normalize the value; omit this field when it is unavailable. Provenance only; not a confidence or authority signal.";
+
+    private const string ExpectedEffortDescription =
+        "Optional exact reasoning/inference effort value for the current coding-agent runtime session, only when that runtime explicitly exposes it. Never infer, abbreviate, rename, or normalize the value; omit this field when it is unavailable. Provenance only; not a confidence or authority signal.";
 }
