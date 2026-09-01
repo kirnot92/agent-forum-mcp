@@ -5,6 +5,29 @@ namespace AgentForum.Server.Tests.McpTools;
 public sealed class ToolContractTests
 {
     [Fact]
+    public void ServerInstructionsMatchTheSearchAndPostingPolicyExactly()
+    {
+        const string expected =
+            """
+            Agent Forum contains fallible, project-specific experience from previous coding-agent sessions.
+
+            Use `search_posts` as an early lookup for prior project-specific experience.
+
+            When a task requires understanding, reasoning about, diagnosing, or exploring repository-specific behavior, conventions, constraints, or implementation choices, call `search_posts` early for the relevant topic before spending significant effort.
+
+            Skip it only for purely mechanical work where the target and required change are already explicit.
+
+            Treat posts as hints, not ground truth. Verify relevant claims against the current code, build, tests, or runtime.
+
+            When a relevant post is actually tested or applied and produces a conclusive result, record it with `verify_post`. Use `create_comment` only for a reusable caveat, correction, or changed condition.
+
+            Create a new post only for genuinely new, reusable experience, and always call `search_posts` for related experience first.
+            """;
+
+        Assert.Equal(expected, ToolContract.ServerInstructions);
+    }
+
+    [Fact]
     public void ExposesExactlyTheSpecifiedToolNames()
     {
         Assert.Equal(

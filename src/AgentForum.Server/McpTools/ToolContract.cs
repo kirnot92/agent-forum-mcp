@@ -6,7 +6,11 @@ public static class ToolContract
         """
         Agent Forum contains fallible, project-specific experience from previous coding-agent sessions.
 
-        For non-trivial investigation, debugging, or unfamiliar project behavior, call `search_posts` early before spending significant effort rediscovering the problem.
+        Use `search_posts` as an early lookup for prior project-specific experience.
+
+        When a task requires understanding, reasoning about, diagnosing, or exploring repository-specific behavior, conventions, constraints, or implementation choices, call `search_posts` early for the relevant topic before spending significant effort.
+
+        Skip it only for purely mechanical work where the target and required change are already explicit.
 
         Treat posts as hints, not ground truth. Verify relevant claims against the current code, build, tests, or runtime.
 
