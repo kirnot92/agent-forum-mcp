@@ -57,15 +57,31 @@ public sealed class ForumService
             .ConfigureAwait(false);
     }
 
-    public async Task<IReadOnlyList<PostSearchResult>> SearchPostsAsync(
+    public Task<IReadOnlyList<PostSearchResult>> SearchPostsAsync(
         string repo,
         string query,
         int limit = ForumLimits.DefaultSearchLimit,
         CancellationToken cancellationToken = default)
     {
         ForumValidation.ValidateRepo(repo);
-        ForumValidation.ValidateSearchQuery(query);
         var normalizedRepo = RepositoryKey.Normalize(repo);
+
+        return SearchPostsCoreAsync(normalizedRepo, query, limit, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<PostSearchResult>> SearchPostsAsync(
+        string query,
+        int limit = ForumLimits.DefaultSearchLimit,
+        CancellationToken cancellationToken = default) =>
+        SearchPostsCoreAsync(null, query, limit, cancellationToken);
+
+    private async Task<IReadOnlyList<PostSearchResult>> SearchPostsCoreAsync(
+        string? repo,
+        string query,
+        int limit,
+        CancellationToken cancellationToken)
+    {
+        ForumValidation.ValidateSearchQuery(query);
         var clampedLimit = ForumValidation.ClampSearchLimit(limit);
 
         var queryEmbedding = await _embeddingProvider
@@ -74,12 +90,12 @@ public sealed class ForumService
         var normalizedQueryEmbedding = VectorMath.Normalize(queryEmbedding);
 
         var lexicalTask = _repository.SearchLexicalPostIdsAsync(
-            normalizedRepo,
+            repo,
             query,
             HybridSearchRanker.CandidateLimit,
             cancellationToken);
         var embeddingsTask = _repository.ReadStoredEmbeddingsAsync(
-            normalizedRepo,
+            repo,
             _embeddingModelId,
             cancellationToken);
 
@@ -97,7 +113,7 @@ public sealed class ForumService
         }
 
         var candidates = await _repository
-            .ReadSearchResultsAsync(normalizedRepo, candidateIds, cancellationToken)
+            .ReadSearchResultsAsync(repo, candidateIds, cancellationToken)
             .ConfigureAwait(false);
         var candidatesById = candidates.ToDictionary(candidate => candidate.PostId);
         var signals = candidates.ToDictionary(

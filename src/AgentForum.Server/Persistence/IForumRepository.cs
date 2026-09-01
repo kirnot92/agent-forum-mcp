@@ -35,13 +35,13 @@ public interface IForumRepository
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<long>> SearchLexicalPostIdsAsync(
-        string repo,
+        string? repo,
         string query,
         int limit,
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<StoredPostEmbedding>> ReadStoredEmbeddingsAsync(
-        string repo,
+        string? repo,
         string modelId,
         CancellationToken cancellationToken = default);
 
@@ -54,7 +54,7 @@ public interface IForumRepository
         CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<PostSearchResult>> ReadSearchResultsAsync(
-        string repo,
+        string? repo,
         IReadOnlyCollection<long> postIds,
         CancellationToken cancellationToken = default);
 }

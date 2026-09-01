@@ -140,6 +140,25 @@ public sealed class ForumServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task SearchPosts_global_search_includes_vector_only_candidates_across_repositories()
+    {
+        var vectors = new Dictionary<string, float[]>
+        {
+            ["First semantic post\n\nplain alpha"] = [1f, 0f],
+            ["Second semantic post\n\nplain beta"] = [0f, 1f],
+            ["unwritten semantic query"] = [1f, 0f],
+        };
+        var service = await CreateServiceAsync(new RecordingEmbeddingProvider(text => vectors[text]));
+        var first = await service.CreatePostAsync(PostInput("owner/one", "First semantic post", "plain alpha"));
+        var second = await service.CreatePostAsync(PostInput("owner/two", "Second semantic post", "plain beta"));
+
+        var results = await service.SearchPostsAsync("unwritten semantic query", 10);
+
+        Assert.Equal([first.Id, second.Id], results.Select(result => result.PostId));
+        Assert.Equal(["owner/one", "owner/two"], results.Select(result => result.Repo));
+    }
+
+    [Fact]
     public async Task SearchPosts_IsDeterministicAndClampsLimit()
     {
         var service = await CreateServiceAsync(new RecordingEmbeddingProvider(_ => [1f]));

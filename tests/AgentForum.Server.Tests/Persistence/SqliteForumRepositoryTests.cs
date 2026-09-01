@@ -290,6 +290,44 @@ public sealed class SqliteForumRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task Global_lexical_search_finds_post_comment_and_verification_text_and_deduplicates_parent()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+
+        var bodyMatch = await repository.CreatePostAsync(
+            PostInput("owner/one", "global_body_token", "original post text"),
+            [1f],
+            "model-a");
+        var activityMatch = await repository.CreatePostAsync(
+            PostInput("owner/two", "activity", "plain body"),
+            [1f],
+            "model-a");
+        await repository.CreateCommentAsync(CommentInput(
+            activityMatch.Id,
+            "global_comment_token shared_activity_token"));
+        await repository.AddVerificationAsync(new VerifyPostInput(
+            activityMatch.Id,
+            VerificationOutcome.WorkedWithChanges,
+            "global_verification_token shared_activity_token",
+            "main",
+            "fed987"));
+
+        Assert.Equal(
+            [bodyMatch.Id],
+            await repository.SearchLexicalPostIdsAsync(null, "global_body_token", 10));
+        Assert.Equal(
+            [activityMatch.Id],
+            await repository.SearchLexicalPostIdsAsync(null, "global_comment_token", 10));
+        Assert.Equal(
+            [activityMatch.Id],
+            await repository.SearchLexicalPostIdsAsync(null, "global_verification_token", 10));
+        Assert.Equal(
+            [activityMatch.Id],
+            await repository.SearchLexicalPostIdsAsync(null, "shared_activity_token", 10));
+    }
+
+    [Fact]
     public async Task Blank_verification_notes_are_not_added_to_activity_search()
     {
         var repository = CreateRepository();
@@ -330,6 +368,16 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         var result = Assert.Single(hydrated);
         Assert.Equal(repoA.Id, result.PostId);
         Assert.Equal("owner/repo-a", result.Repo);
+
+        Assert.Equal(
+            [repoA.Id, repoB.Id],
+            await repository.SearchLexicalPostIdsAsync(null, "shared", 10));
+        Assert.Equal(
+            [repoA.Id, repoB.Id],
+            (await repository.ReadStoredEmbeddingsAsync(null, "model-a")).Select(embedding => embedding.PostId));
+        Assert.Equal(
+            [repoB.Id, repoA.Id],
+            (await repository.ReadSearchResultsAsync(null, [repoB.Id, repoA.Id])).Select(post => post.PostId));
     }
 
     [Fact]

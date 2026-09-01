@@ -447,19 +447,18 @@ public sealed partial class SqliteForumRepository : IForumRepository
     }
 
     public async Task<IReadOnlyList<long>> SearchLexicalPostIdsAsync(
-        string repo,
+        string? repo,
         string query,
         int limit,
         CancellationToken cancellationToken = default)
     {
-        RequireText(repo, nameof(repo));
         ArgumentNullException.ThrowIfNull(query);
         if (limit <= 0)
         {
             throw new ArgumentOutOfRangeException(nameof(limit), limit, "The lexical result limit must be positive.");
         }
 
-        var normalizedRepo = RepositoryKey.Normalize(repo);
+        var normalizedRepo = repo is null ? null : RepositoryKey.Normalize(repo);
         var matchExpression = BuildFtsMatchExpression(query);
         if (matchExpression is null)
         {
@@ -470,16 +469,29 @@ public sealed partial class SqliteForumRepository : IForumRepository
         var postIds = new List<long>(limit);
         await using (var command = connection.CreateCommand())
         {
-            command.CommandText = """
-            SELECT posts_fts.rowid
-            FROM posts_fts
-            INNER JOIN posts ON posts.id = posts_fts.rowid
-            WHERE posts_fts MATCH $match AND posts.repo = $repo
-            ORDER BY bm25(posts_fts), posts_fts.rowid
-            LIMIT $limit;
-            """;
+            command.CommandText = normalizedRepo is null
+                ? """
+                    SELECT posts_fts.rowid
+                    FROM posts_fts
+                    INNER JOIN posts ON posts.id = posts_fts.rowid
+                    WHERE posts_fts MATCH $match
+                    ORDER BY bm25(posts_fts), posts_fts.rowid
+                    LIMIT $limit;
+                    """
+                : """
+                    SELECT posts_fts.rowid
+                    FROM posts_fts
+                    INNER JOIN posts ON posts.id = posts_fts.rowid
+                    WHERE posts_fts MATCH $match AND posts.repo = $repo
+                    ORDER BY bm25(posts_fts), posts_fts.rowid
+                    LIMIT $limit;
+                    """;
             command.Parameters.AddWithValue("$match", matchExpression);
-            command.Parameters.AddWithValue("$repo", normalizedRepo);
+            if (normalizedRepo is not null)
+            {
+                command.Parameters.AddWithValue("$repo", normalizedRepo);
+            }
+
             command.Parameters.AddWithValue("$limit", limit);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
@@ -497,15 +509,26 @@ public sealed partial class SqliteForumRepository : IForumRepository
         var seenPostIds = postIds.ToHashSet();
         await using (var command = connection.CreateCommand())
         {
-            command.CommandText = """
-                SELECT CAST(post_activity_fts.post_id AS INTEGER)
-                FROM post_activity_fts
-                INNER JOIN posts ON posts.id = CAST(post_activity_fts.post_id AS INTEGER)
-                WHERE post_activity_fts MATCH $match AND posts.repo = $repo
-                ORDER BY bm25(post_activity_fts), post_activity_fts.rowid;
-                """;
+            command.CommandText = normalizedRepo is null
+                ? """
+                    SELECT CAST(post_activity_fts.post_id AS INTEGER)
+                    FROM post_activity_fts
+                    INNER JOIN posts ON posts.id = CAST(post_activity_fts.post_id AS INTEGER)
+                    WHERE post_activity_fts MATCH $match
+                    ORDER BY bm25(post_activity_fts), post_activity_fts.rowid;
+                    """
+                : """
+                    SELECT CAST(post_activity_fts.post_id AS INTEGER)
+                    FROM post_activity_fts
+                    INNER JOIN posts ON posts.id = CAST(post_activity_fts.post_id AS INTEGER)
+                    WHERE post_activity_fts MATCH $match AND posts.repo = $repo
+                    ORDER BY bm25(post_activity_fts), post_activity_fts.rowid;
+                    """;
             command.Parameters.AddWithValue("$match", matchExpression);
-            command.Parameters.AddWithValue("$repo", normalizedRepo);
+            if (normalizedRepo is not null)
+            {
+                command.Parameters.AddWithValue("$repo", normalizedRepo);
+            }
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (postIds.Count < limit && await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -522,24 +545,35 @@ public sealed partial class SqliteForumRepository : IForumRepository
     }
 
     public async Task<IReadOnlyList<StoredPostEmbedding>> ReadStoredEmbeddingsAsync(
-        string repo,
+        string? repo,
         string modelId,
         CancellationToken cancellationToken = default)
     {
-        RequireText(repo, nameof(repo));
         RequireText(modelId, nameof(modelId));
-        var normalizedRepo = RepositoryKey.Normalize(repo);
+        var normalizedRepo = repo is null ? null : RepositoryKey.Normalize(repo);
 
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT e.post_id, e.model_id, e.dimensions, e.vector_blob
-            FROM post_embeddings AS e
-            INNER JOIN posts AS p ON p.id = e.post_id
-            WHERE p.repo = $repo AND e.model_id = $modelId
-            ORDER BY e.post_id;
-            """;
-        command.Parameters.AddWithValue("$repo", normalizedRepo);
+        command.CommandText = normalizedRepo is null
+            ? """
+                SELECT e.post_id, e.model_id, e.dimensions, e.vector_blob
+                FROM post_embeddings AS e
+                INNER JOIN posts AS p ON p.id = e.post_id
+                WHERE e.model_id = $modelId
+                ORDER BY e.post_id;
+                """
+            : """
+                SELECT e.post_id, e.model_id, e.dimensions, e.vector_blob
+                FROM post_embeddings AS e
+                INNER JOIN posts AS p ON p.id = e.post_id
+                WHERE p.repo = $repo AND e.model_id = $modelId
+                ORDER BY e.post_id;
+                """;
+        if (normalizedRepo is not null)
+        {
+            command.Parameters.AddWithValue("$repo", normalizedRepo);
+        }
+
         command.Parameters.AddWithValue("$modelId", modelId);
 
         var embeddings = new List<StoredPostEmbedding>();
@@ -622,13 +656,12 @@ public sealed partial class SqliteForumRepository : IForumRepository
     }
 
     public async Task<IReadOnlyList<PostSearchResult>> ReadSearchResultsAsync(
-        string repo,
+        string? repo,
         IReadOnlyCollection<long> postIds,
         CancellationToken cancellationToken = default)
     {
-        RequireText(repo, nameof(repo));
         ArgumentNullException.ThrowIfNull(postIds);
-        var normalizedRepo = RepositoryKey.Normalize(repo);
+        var normalizedRepo = repo is null ? null : RepositoryKey.Normalize(repo);
 
         if (postIds.Count == 0)
         {
@@ -655,11 +688,19 @@ public sealed partial class SqliteForumRepository : IForumRepository
                 command.Parameters.AddWithValue(parameterName, batch[index]);
             }
 
-            command.CommandText = $"""
-                {CompactPostProjectionSql}
-                WHERE p.repo = $repo AND p.id IN ({string.Join(", ", parameterNames)});
-                """;
-            command.Parameters.AddWithValue("$repo", normalizedRepo);
+            command.CommandText = normalizedRepo is null
+                ? $"""
+                    {CompactPostProjectionSql}
+                    WHERE p.id IN ({string.Join(", ", parameterNames)});
+                    """
+                : $"""
+                    {CompactPostProjectionSql}
+                    WHERE p.repo = $repo AND p.id IN ({string.Join(", ", parameterNames)});
+                    """;
+            if (normalizedRepo is not null)
+            {
+                command.Parameters.AddWithValue("$repo", normalizedRepo);
+            }
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
