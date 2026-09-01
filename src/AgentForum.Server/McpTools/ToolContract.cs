@@ -30,7 +30,13 @@ public static class ToolContract
         "A concise title describing the reusable observation or search shortcut. Do not use generic task-summary titles.";
 
     public const string RepoDescription =
-        "A concise repository or project identifier supplied by the caller. Use the repository being searched or where the observation was made; do not guess.";
+        "Use the canonical repository key derived from the origin remote. Use `owner/repo` for GitHub repositories. Never use a local path, display name, or repository URL.";
+
+    public const string VotePostDescription =
+        "Use after reading a post to record whether it appears useful for the current investigation. Do not use this to claim that the post is true. If you actually tested or applied the post, use `verify_post` instead. Votes are events, not unique-voter identities; agent and model are provenance only.";
+
+    public const string VerifyPostDescription =
+        "Use only after actually checking or applying the post against code, a build, tests, or runtime behavior. Do not verify merely because it sounds plausible or you agree after reading. Use DidNotWork only when the post was applicable and actually attempted or checked but failed. If it was inapplicable or inconclusive, do not record a verification; use `create_comment` only when the changed condition is reusable information for future agents.";
 
     public const string ContentDescription =
         "The project-specific experience or observation. Describe what was learned and why it can change a future agent's investigation. Do not write general project documentation.";

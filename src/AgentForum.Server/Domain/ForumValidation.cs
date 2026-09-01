@@ -6,12 +6,13 @@ public static class ForumValidation
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        Require(input.Repo, nameof(input.Repo));
+        ValidateRepo(input.Repo);
         Require(input.Title, nameof(input.Title));
         AtMost(input.Title, ForumLimits.MaxTitleLength, nameof(input.Title));
         Require(input.Content, nameof(input.Content));
         AtMost(input.Content, ForumLimits.MaxPostContentLength, nameof(input.Content));
         RequireRepositoryState(input.Branch, input.Commit);
+        ValidateProvenance(input.Agent, input.Model, input.Effort);
     }
 
     public static void Validate(CreateCommentInput input)
@@ -22,6 +23,7 @@ public static class ForumValidation
         Require(input.Content, nameof(input.Content));
         AtMost(input.Content, ForumLimits.MaxCommentContentLength, nameof(input.Content));
         RequireRepositoryState(input.Branch, input.Commit);
+        ValidateProvenance(input.Agent, input.Model, input.Effort);
     }
 
     public static void Validate(VotePostInput input)
@@ -36,6 +38,9 @@ public static class ForumValidation
                 input.Value,
                 "Vote value must be exactly +1 or -1.");
         }
+
+        OptionalAtMost(input.Agent, ForumLimits.MaxAgentLength, nameof(input.Agent));
+        OptionalAtMost(input.Model, ForumLimits.MaxModelLength, nameof(input.Model));
     }
 
     public static void Validate(VerifyPostInput input)
@@ -51,7 +56,15 @@ public static class ForumValidation
                 "Verification outcome is not supported.");
         }
 
+        OptionalAtMost(input.Note, ForumLimits.MaxVerificationNoteLength, nameof(input.Note));
+        if (input.Outcome is VerificationOutcome.WorkedWithChanges or VerificationOutcome.DidNotWork &&
+            string.IsNullOrWhiteSpace(input.Note))
+        {
+            throw new ArgumentException($"{input.Outcome} requires a note.", nameof(input.Note));
+        }
+
         RequireRepositoryState(input.Branch, input.Commit);
+        ValidateProvenance(input.Agent, input.Model, input.Effort);
     }
 
     public static void ValidatePostId(long postId)
@@ -61,7 +74,10 @@ public static class ForumValidation
         => Require(query, nameof(query));
 
     public static void ValidateRepo(string repo)
-        => Require(repo, nameof(repo));
+    {
+        Require(repo, nameof(repo));
+        AtMost(repo, ForumLimits.MaxRepoLength, nameof(repo));
+    }
 
     public static int ClampSearchLimit(int limit)
         => Math.Clamp(limit, 1, ForumLimits.MaxSearchLimit);
@@ -80,7 +96,16 @@ public static class ForumValidation
     private static void RequireRepositoryState(string branch, string commit)
     {
         Require(branch, nameof(branch));
+        AtMost(branch, ForumLimits.MaxBranchLength, nameof(branch));
         Require(commit, nameof(commit));
+        AtMost(commit, ForumLimits.MaxCommitLength, nameof(commit));
+    }
+
+    private static void ValidateProvenance(string? agent, string? model, string? effort)
+    {
+        OptionalAtMost(agent, ForumLimits.MaxAgentLength, nameof(agent));
+        OptionalAtMost(model, ForumLimits.MaxModelLength, nameof(model));
+        OptionalAtMost(effort, ForumLimits.MaxEffortLength, nameof(effort));
     }
 
     private static void RequirePositivePostId(long postId)
@@ -109,6 +134,14 @@ public static class ForumValidation
             throw new ArgumentException(
                 $"{parameterName} cannot exceed {maximumLength} characters; received {value.Length} characters.",
                 parameterName);
+        }
+    }
+
+    private static void OptionalAtMost(string? value, int maximumLength, string parameterName)
+    {
+        if (value is not null)
+        {
+            AtMost(value, maximumLength, parameterName);
         }
     }
 }

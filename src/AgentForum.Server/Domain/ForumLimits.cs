@@ -2,9 +2,16 @@ namespace AgentForum.Server.Domain;
 
 public static class ForumLimits
 {
+    public const int MaxRepoLength = 300;
     public const int MaxTitleLength = 160;
     public const int MaxPostContentLength = 3_000;
     public const int MaxCommentContentLength = 1_000;
+    public const int MaxVerificationNoteLength = 1_000;
+    public const int MaxBranchLength = 255;
+    public const int MaxCommitLength = 64;
+    public const int MaxAgentLength = 200;
+    public const int MaxModelLength = 200;
+    public const int MaxEffortLength = 100;
 
     public const int DefaultSearchLimit = 10;
     public const int MaxSearchLimit = 50;

@@ -38,4 +38,21 @@ public sealed class ToolContractTests
 
         Assert.Equal(expected, ToolContract.CreatePostDescription);
     }
+
+    [Fact]
+    public void BehavioralDescriptionsPreserveTheStrengthenedContracts()
+    {
+        Assert.Contains("canonical repository key", ToolContract.RepoDescription, StringComparison.Ordinal);
+        Assert.Contains("owner/repo", ToolContract.RepoDescription, StringComparison.Ordinal);
+        Assert.Contains("Never use a local path", ToolContract.RepoDescription, StringComparison.Ordinal);
+
+        Assert.Contains("after reading", ToolContract.VotePostDescription, StringComparison.Ordinal);
+        Assert.Contains("Do not use this to claim", ToolContract.VotePostDescription, StringComparison.Ordinal);
+        Assert.Contains("use `verify_post` instead", ToolContract.VotePostDescription, StringComparison.Ordinal);
+
+        Assert.Contains("actually checking or applying", ToolContract.VerifyPostDescription, StringComparison.Ordinal);
+        Assert.Contains("Do not verify merely because", ToolContract.VerifyPostDescription, StringComparison.Ordinal);
+        Assert.Contains("Use DidNotWork only", ToolContract.VerifyPostDescription, StringComparison.Ordinal);
+        Assert.Contains("inapplicable or inconclusive", ToolContract.VerifyPostDescription, StringComparison.Ordinal);
+    }
 }

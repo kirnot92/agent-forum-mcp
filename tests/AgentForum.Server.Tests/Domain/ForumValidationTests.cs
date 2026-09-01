@@ -9,8 +9,14 @@ public sealed class ForumValidationTests
     {
         var input = ValidPost() with
         {
+            Repo = new string('r', ForumLimits.MaxRepoLength),
             Title = new string('t', ForumLimits.MaxTitleLength),
-            Content = new string('c', ForumLimits.MaxPostContentLength)
+            Content = new string('c', ForumLimits.MaxPostContentLength),
+            Branch = new string('b', ForumLimits.MaxBranchLength),
+            Commit = new string('c', ForumLimits.MaxCommitLength),
+            Agent = new string('a', ForumLimits.MaxAgentLength),
+            Model = new string('m', ForumLimits.MaxModelLength),
+            Effort = new string('e', ForumLimits.MaxEffortLength),
         };
 
         ForumValidation.Validate(input);
@@ -56,12 +62,40 @@ public sealed class ForumValidationTests
         Assert.Contains("received 3001 characters", exception.Message);
     }
 
+    [Theory]
+    [InlineData("Repo")]
+    [InlineData("Branch")]
+    [InlineData("Commit")]
+    [InlineData("Agent")]
+    [InlineData("Model")]
+    [InlineData("Effort")]
+    public void CreatePost_RejectsOtherFieldsOverMaximum(string field)
+    {
+        var input = field switch
+        {
+            "Repo" => ValidPost() with { Repo = new string('r', ForumLimits.MaxRepoLength + 1) },
+            "Branch" => ValidPost() with { Branch = new string('b', ForumLimits.MaxBranchLength + 1) },
+            "Commit" => ValidPost() with { Commit = new string('c', ForumLimits.MaxCommitLength + 1) },
+            "Agent" => ValidPost() with { Agent = new string('a', ForumLimits.MaxAgentLength + 1) },
+            "Model" => ValidPost() with { Model = new string('m', ForumLimits.MaxModelLength + 1) },
+            "Effort" => ValidPost() with { Effort = new string('e', ForumLimits.MaxEffortLength + 1) },
+            _ => throw new ArgumentOutOfRangeException(nameof(field)),
+        };
+
+        Assert.Throws<ArgumentException>(() => ForumValidation.Validate(input));
+    }
+
     [Fact]
     public void CreateComment_AcceptsExactLengthBoundary()
     {
         var input = ValidComment() with
         {
-            Content = new string('c', ForumLimits.MaxCommentContentLength)
+            Content = new string('c', ForumLimits.MaxCommentContentLength),
+            Branch = new string('b', ForumLimits.MaxBranchLength),
+            Commit = new string('c', ForumLimits.MaxCommitLength),
+            Agent = new string('a', ForumLimits.MaxAgentLength),
+            Model = new string('m', ForumLimits.MaxModelLength),
+            Effort = new string('e', ForumLimits.MaxEffortLength),
         };
 
         ForumValidation.Validate(input);
@@ -73,6 +107,27 @@ public sealed class ForumValidationTests
         var input = ValidComment() with
         {
             Content = new string('c', ForumLimits.MaxCommentContentLength + 1)
+        };
+
+        Assert.Throws<ArgumentException>(() => ForumValidation.Validate(input));
+    }
+
+    [Theory]
+    [InlineData("Branch")]
+    [InlineData("Commit")]
+    [InlineData("Agent")]
+    [InlineData("Model")]
+    [InlineData("Effort")]
+    public void CreateComment_RejectsOtherFieldsOverMaximum(string field)
+    {
+        var input = field switch
+        {
+            "Branch" => ValidComment() with { Branch = new string('b', ForumLimits.MaxBranchLength + 1) },
+            "Commit" => ValidComment() with { Commit = new string('c', ForumLimits.MaxCommitLength + 1) },
+            "Agent" => ValidComment() with { Agent = new string('a', ForumLimits.MaxAgentLength + 1) },
+            "Model" => ValidComment() with { Model = new string('m', ForumLimits.MaxModelLength + 1) },
+            "Effort" => ValidComment() with { Effort = new string('e', ForumLimits.MaxEffortLength + 1) },
+            _ => throw new ArgumentOutOfRangeException(nameof(field)),
         };
 
         Assert.Throws<ArgumentException>(() => ForumValidation.Validate(input));
@@ -131,13 +186,26 @@ public sealed class ForumValidationTests
             () => ForumValidation.Validate(new VotePostInput(postId, 1)));
     }
 
+    [Fact]
+    public void Vote_RejectsOverlongProvenance()
+    {
+        Assert.Throws<ArgumentException>(() => ForumValidation.Validate(
+            new VotePostInput(1, 1, new string('a', ForumLimits.MaxAgentLength + 1), null)));
+        Assert.Throws<ArgumentException>(() => ForumValidation.Validate(
+            new VotePostInput(1, 1, null, new string('m', ForumLimits.MaxModelLength + 1))));
+    }
+
     [Theory]
     [InlineData(VerificationOutcome.WorkedAsWritten)]
     [InlineData(VerificationOutcome.WorkedWithChanges)]
     [InlineData(VerificationOutcome.DidNotWork)]
     public void Verification_AcceptsEveryDefinedOutcome(VerificationOutcome outcome)
     {
-        ForumValidation.Validate(ValidVerification() with { Outcome = outcome });
+        ForumValidation.Validate(ValidVerification() with
+        {
+            Outcome = outcome,
+            Note = outcome == VerificationOutcome.WorkedAsWritten ? null : "Observed evidence.",
+        });
     }
 
     [Fact]
@@ -146,6 +214,62 @@ public sealed class ForumValidationTests
         var input = ValidVerification() with { Outcome = (VerificationOutcome)99 };
 
         Assert.Throws<ArgumentOutOfRangeException>(() => ForumValidation.Validate(input));
+    }
+
+    [Fact]
+    public void Verification_WorkedAsWrittenAllowsOmittedNote()
+    {
+        ForumValidation.Validate(ValidVerification() with
+        {
+            Outcome = VerificationOutcome.WorkedAsWritten,
+            Note = null,
+        });
+    }
+
+    [Theory]
+    [InlineData(VerificationOutcome.WorkedWithChanges)]
+    [InlineData(VerificationOutcome.DidNotWork)]
+    public void Verification_OtherOutcomesRequireNonblankNote(VerificationOutcome outcome)
+    {
+        var exception = Assert.Throws<ArgumentException>(() => ForumValidation.Validate(
+            ValidVerification() with { Outcome = outcome, Note = " " }));
+
+        Assert.StartsWith($"{outcome} requires a note.", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Verification_EnforcesNoteLengthBoundary()
+    {
+        ForumValidation.Validate(ValidVerification() with
+        {
+            Note = new string('n', ForumLimits.MaxVerificationNoteLength),
+        });
+
+        Assert.Throws<ArgumentException>(() => ForumValidation.Validate(ValidVerification() with
+        {
+            Note = new string('n', ForumLimits.MaxVerificationNoteLength + 1),
+        }));
+    }
+
+    [Theory]
+    [InlineData("Branch")]
+    [InlineData("Commit")]
+    [InlineData("Agent")]
+    [InlineData("Model")]
+    [InlineData("Effort")]
+    public void Verification_RejectsRepositoryStateAndProvenanceOverMaximum(string field)
+    {
+        var input = field switch
+        {
+            "Branch" => ValidVerification() with { Branch = new string('b', ForumLimits.MaxBranchLength + 1) },
+            "Commit" => ValidVerification() with { Commit = new string('c', ForumLimits.MaxCommitLength + 1) },
+            "Agent" => ValidVerification() with { Agent = new string('a', ForumLimits.MaxAgentLength + 1) },
+            "Model" => ValidVerification() with { Model = new string('m', ForumLimits.MaxModelLength + 1) },
+            "Effort" => ValidVerification() with { Effort = new string('e', ForumLimits.MaxEffortLength + 1) },
+            _ => throw new ArgumentOutOfRangeException(nameof(field)),
+        };
+
+        Assert.Throws<ArgumentException>(() => ForumValidation.Validate(input));
     }
 
     [Theory]
@@ -199,6 +323,13 @@ public sealed class ForumValidationTests
     public void SearchRepo_RequiresNonWhitespaceText()
     {
         Assert.Throws<ArgumentException>(() => ForumValidation.ValidateRepo(" "));
+    }
+
+    [Fact]
+    public void SearchRepo_RejectsOverMaximum()
+    {
+        Assert.Throws<ArgumentException>(() =>
+            ForumValidation.ValidateRepo(new string('r', ForumLimits.MaxRepoLength + 1)));
     }
 
     [Fact]

@@ -119,9 +119,9 @@ public sealed class ForumToolsContractTests
             typeof(Task<Verification>),
             ("post_id", typeof(long), false, null, NullabilityState.NotNull, VerifyPostIdDescription),
             ("outcome", typeof(VerificationOutcome), false, null, NullabilityState.NotNull, VerificationOutcomeDescription),
-            ("note", typeof(string), false, null, NullabilityState.Nullable, VerificationNoteDescription),
             ("branch", typeof(string), false, null, NullabilityState.NotNull, ToolContract.BranchDescription),
             ("commit", typeof(string), false, null, NullabilityState.NotNull, ToolContract.CommitDescription),
+            ("note", typeof(string), true, null, NullabilityState.Nullable, VerificationNoteDescription),
             ("agent", typeof(string), true, null, NullabilityState.Nullable, ToolContract.AgentDescription),
             ("model", typeof(string), true, null, NullabilityState.Nullable, ToolContract.ModelDescription),
             ("effort", typeof(string), true, null, NullabilityState.Nullable, ToolContract.EffortDescription));
@@ -170,8 +170,49 @@ public sealed class ForumToolsContractTests
             .Select(item => item.GetString())
             .ToArray();
 
-        Assert.Contains("note", verifyRequired);
+        Assert.DoesNotContain("note", verifyRequired);
         Assert.True(AllowsNull(verifySchema.GetProperty("properties").GetProperty("note")));
+    }
+
+    [Fact]
+    public void FactorySchemasExposeCentralStringLengthLimits()
+    {
+        var expected = new Dictionary<(string Tool, string Parameter), int>
+        {
+            [("create_post", "repo")] = ForumLimits.MaxRepoLength,
+            [("create_post", "title")] = ForumLimits.MaxTitleLength,
+            [("create_post", "content")] = ForumLimits.MaxPostContentLength,
+            [("create_post", "branch")] = ForumLimits.MaxBranchLength,
+            [("create_post", "commit")] = ForumLimits.MaxCommitLength,
+            [("create_post", "agent")] = ForumLimits.MaxAgentLength,
+            [("create_post", "model")] = ForumLimits.MaxModelLength,
+            [("create_post", "effort")] = ForumLimits.MaxEffortLength,
+            [("search_posts", "repo")] = ForumLimits.MaxRepoLength,
+            [("create_comment", "content")] = ForumLimits.MaxCommentContentLength,
+            [("create_comment", "branch")] = ForumLimits.MaxBranchLength,
+            [("create_comment", "commit")] = ForumLimits.MaxCommitLength,
+            [("create_comment", "agent")] = ForumLimits.MaxAgentLength,
+            [("create_comment", "model")] = ForumLimits.MaxModelLength,
+            [("create_comment", "effort")] = ForumLimits.MaxEffortLength,
+            [("vote_post", "agent")] = ForumLimits.MaxAgentLength,
+            [("vote_post", "model")] = ForumLimits.MaxModelLength,
+            [("verify_post", "branch")] = ForumLimits.MaxBranchLength,
+            [("verify_post", "commit")] = ForumLimits.MaxCommitLength,
+            [("verify_post", "note")] = ForumLimits.MaxVerificationNoteLength,
+            [("verify_post", "agent")] = ForumLimits.MaxAgentLength,
+            [("verify_post", "model")] = ForumLimits.MaxModelLength,
+            [("verify_post", "effort")] = ForumLimits.MaxEffortLength,
+        };
+
+        foreach (var ((tool, parameter), maximum) in expected)
+        {
+            var property = CreateProtocolTool(ToolMethods()[tool])
+                .InputSchema
+                .GetProperty("properties")
+                .GetProperty(parameter);
+
+            Assert.Equal(maximum, property.GetProperty("maxLength").GetInt32());
+        }
     }
 
     private static IReadOnlyDictionary<string, MethodInfo> ToolMethods() =>
@@ -265,10 +306,10 @@ public sealed class ForumToolsContractTests
         "Read comments for a forum post separately from `read_post`, using limit-and-offset pagination.";
 
     private const string VotePostDescription =
-        "Record a lightweight read-time judgment on a forum post: use 1 for useful or -1 for not useful.";
+        ToolContract.VotePostDescription;
 
     private const string VerifyPostDescription =
-        "Record whether a forum post worked only after actual use, testing, reproduction, or checking in the workspace. Never verify a post merely because it sounds plausible.";
+        ToolContract.VerifyPostDescription;
 
     private const string SearchQueryDescription =
         "The project-specific behavior, symptom, component, experiment, or dead end to search for.";
@@ -307,5 +348,5 @@ public sealed class ForumToolsContractTests
         "The observed outcome: WorkedAsWritten, WorkedWithChanges, or DidNotWork.";
 
     private const string VerificationNoteDescription =
-        "A nullable note describing evidence, changes required, or why it did not work.";
+        "Optional evidence for WorkedAsWritten; required details of changes or failure for the other outcomes.";
 }
