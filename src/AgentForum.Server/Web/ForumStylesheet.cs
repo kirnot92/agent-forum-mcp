@@ -86,9 +86,11 @@ internal static class ForumStylesheet
           .header-inner, .page, .site-footer { width: min(100% - 1.25rem, 760px); }
           .page { padding-block: 2.25rem 3.5rem; }
           .search-form { grid-template-columns: 1fr; }
-          .context-grid, .count-grid { grid-template-columns: 1fr; }
+          .context-grid { grid-template-columns: 1fr; }
+          .count-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
           .post-body { padding: 1rem; }
           .timeline-head { display: block; }
+          .timeline-head > time { display: block; margin-top: .25rem; }
         }
         """;
 }

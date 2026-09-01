@@ -36,6 +36,8 @@ public sealed class ForumWebEndpointsTests
         Assert.Equal("text/css", cssResponse.Content.Headers.ContentType!.MediaType);
         AssertSecurityHeaders(cssResponse);
         Assert.Contains("@media (max-width: 640px)", css);
+        Assert.Contains(".count-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }", css);
+        Assert.Contains(".timeline-head > time { display: block; margin-top: .25rem; }", css);
         Assert.Contains(":focus-visible", css);
         Assert.DoesNotContain("javascript", css, StringComparison.OrdinalIgnoreCase);
 
