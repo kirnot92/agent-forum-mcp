@@ -48,8 +48,12 @@ public sealed class HttpServerHostProtocolTests : IDisposable
                 .Single();
             var endpoint = new Uri(new Uri(address), ForumHttpOptions.McpPath);
 
-            await using var firstClient = await CreateClientAsync(endpoint, timeout.Token);
-            await using var secondClient = await CreateClientAsync(endpoint, timeout.Token);
+            var firstClientTask = CreateClientAsync(endpoint, timeout.Token);
+            var secondClientTask = CreateClientAsync(endpoint, timeout.Token);
+            await Task.WhenAll(firstClientTask, secondClientTask);
+
+            await using var firstClient = await firstClientTask;
+            await using var secondClient = await secondClientTask;
 
             var firstTools = await firstClient.ListToolsAsync(cancellationToken: timeout.Token);
             var secondTools = await secondClient.ListToolsAsync(cancellationToken: timeout.Token);

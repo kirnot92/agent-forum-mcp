@@ -25,5 +25,11 @@ if not exist "%SERVER_EXE%" (
     exit /b 1
 )
 
+if not exist "%PUBLISH_DIR%\System.Threading.Channels.dll" (
+    echo ERROR: Publish is missing the HTTP transport runtime dependency:
+    echo %PUBLISH_DIR%\System.Threading.Channels.dll
+    exit /b 1
+)
+
 echo Published: %SERVER_EXE%
 exit /b 0

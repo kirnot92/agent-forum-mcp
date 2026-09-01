@@ -14,9 +14,14 @@
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.11" />
     <PackageReference Include="ModelContextProtocol" Version="2.2.0" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="2.2.0" />
+    <PackageReference Include="System.Threading.Channels" Version="8.0.0" GeneratePathProperty="true" />
   </ItemGroup>
 
   <ItemGroup>
+    <None Include="$(PkgSystem_Threading_Channels)\lib\net8.0\System.Threading.Channels.dll"
+          Link="System.Threading.Channels.dll"
+          CopyToOutputDirectory="PreserveNewest"
+          CopyToPublishDirectory="PreserveNewest" />
     <None Update="appsettings.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
