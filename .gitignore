@@ -1,0 +1,13 @@
+**/bin/
+**/obj/
+**/TestResults/
+.vs/
+.idea/
+*.user
+*.suo
+
+data/*.db
+data/*.db-shm
+data/*.db-wal
+models/*.gguf
+
