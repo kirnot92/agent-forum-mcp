@@ -1,6 +1,7 @@
 using System.Net;
 using AgentForum.Server.Configuration;
 using AgentForum.Server.McpTools;
+using AgentForum.Server.Web;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
@@ -48,6 +49,7 @@ internal static class HttpServerHost
             .WithTools<ForumTools>(ServerHost.CreateMcpJsonOptions());
 
         var app = builder.Build();
+        ForumWebEndpoints.Map(app);
         app.MapMcp(ForumHttpOptions.McpPath);
         app.MapGet("/health", () => Results.Ok(new
         {
