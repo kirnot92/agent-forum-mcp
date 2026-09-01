@@ -28,6 +28,7 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         Assert.Contains(("table", "verifications"), objects);
         Assert.Contains(("table", "post_embeddings"), objects);
         Assert.Contains(("table", "posts_fts"), objects);
+        Assert.Contains(("table", "post_activity_fts"), objects);
         Assert.Contains(("index", "ix_posts_repo"), objects);
         Assert.Contains(("index", "ix_comments_post_created"), objects);
         Assert.Contains(("index", "ix_votes_post"), objects);
@@ -40,6 +41,115 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         await using var foreignKeyCommand = connection.CreateCommand();
         foreignKeyCommand.CommandText = "PRAGMA foreign_keys;";
         Assert.Equal(1L, (long)(await foreignKeyCommand.ExecuteScalarAsync())!);
+
+        await using var versionsCommand = connection.CreateCommand();
+        versionsCommand.CommandText = "SELECT version FROM schema_migrations ORDER BY version;";
+        await using var versionReader = await versionsCommand.ExecuteReaderAsync();
+        var versions = new List<long>();
+        while (await versionReader.ReadAsync())
+        {
+            versions.Add(versionReader.GetInt64(0));
+        }
+
+        Assert.Equal([2L], versions);
+    }
+
+    [Fact]
+    public async Task Reopening_compatible_version_two_database_does_not_mutate_schema_or_rebuild_fts()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+        var post = await repository.CreatePostAsync(PostInput("owner/repo", "fts sentinel", "body"), [1f], "model-a");
+
+        await using (var connection = OpenInspectionConnection())
+        {
+            await ExecuteInspectionSqlAsync(connection, """
+                UPDATE schema_migrations
+                SET applied_at = 'reopen-sentinel'
+                WHERE version = 2;
+                """);
+        }
+
+        await repository.InitializeAsync();
+        Assert.Equal([post.Id], await repository.SearchLexicalPostIdsAsync("owner/repo", "fts sentinel", 10));
+
+        await using var reopened = OpenInspectionConnection();
+        await using var check = reopened.CreateCommand();
+        check.CommandText = "SELECT applied_at FROM schema_migrations WHERE version = 2;";
+        Assert.Equal("reopen-sentinel", (string)(await check.ExecuteScalarAsync())!);
+    }
+
+    [Fact]
+    public async Task Version_two_database_missing_required_object_fails_without_repair()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+
+        await using (var connection = OpenInspectionConnection())
+        {
+            await ExecuteInspectionSqlAsync(connection, "DROP INDEX ix_posts_repo;");
+        }
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => repository.InitializeAsync());
+        Assert.Contains("version 2", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ix_posts_repo", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("recreate", exception.Message, StringComparison.OrdinalIgnoreCase);
+
+        await using var inspection = OpenInspectionConnection();
+        var objects = await ReadSchemaObjectsAsync(inspection);
+        Assert.DoesNotContain(("index", "ix_posts_repo"), objects);
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(3)]
+    public async Task Existing_database_with_different_version_fails_without_mutation(int databaseVersion)
+    {
+        await using (var connection = OpenInspectionConnection())
+        {
+            await ExecuteInspectionSqlAsync(connection, $"""
+                CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL) STRICT;
+                INSERT INTO schema_migrations(version, applied_at) VALUES ({databaseVersion}, 'sentinel');
+                CREATE TABLE legacy_sentinel(value TEXT NOT NULL) STRICT;
+                INSERT INTO legacy_sentinel(value) VALUES ('unchanged');
+                """);
+        }
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => CreateRepository().InitializeAsync());
+        Assert.Contains($"version {databaseVersion}", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("expects version 2", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("recreate", exception.Message, StringComparison.OrdinalIgnoreCase);
+
+        await using var inspection = OpenInspectionConnection();
+        var objects = await ReadSchemaObjectsAsync(inspection);
+        Assert.DoesNotContain(("table", "posts"), objects);
+        await using var sentinelCommand = inspection.CreateCommand();
+        sentinelCommand.CommandText = "SELECT value FROM legacy_sentinel;";
+        Assert.Equal("unchanged", (string)(await sentinelCommand.ExecuteScalarAsync())!);
+    }
+
+    [Fact]
+    public async Task Unversioned_nonempty_database_fails_without_mutation()
+    {
+        await using (var connection = OpenInspectionConnection())
+        {
+            await ExecuteInspectionSqlAsync(connection, """
+                CREATE TABLE posts(id INTEGER PRIMARY KEY, legacy_value TEXT NOT NULL) STRICT;
+                INSERT INTO posts(legacy_value) VALUES ('unchanged');
+                """);
+        }
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(() => CreateRepository().InitializeAsync());
+        Assert.Contains("nonempty", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("version 2", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("recreate", exception.Message, StringComparison.OrdinalIgnoreCase);
+
+        await using var inspection = OpenInspectionConnection();
+        var objects = await ReadSchemaObjectsAsync(inspection);
+        Assert.DoesNotContain(("table", "schema_migrations"), objects);
+        await using var sentinelCommand = inspection.CreateCommand();
+        sentinelCommand.CommandText = "SELECT legacy_value FROM posts;";
+        Assert.Equal("unchanged", (string)(await sentinelCommand.ExecuteScalarAsync())!);
     }
 
     [Fact]
@@ -145,23 +255,81 @@ public sealed class SqliteForumRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task Lexical_search_appends_deduplicated_activity_matches_after_original_post_matches()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+
+        var activityOnly = await repository.CreatePostAsync(PostInput("Owner/Repo", "activity", "plain body"), [1f], "model-a");
+        await repository.CreateCommentAsync(CommentInput(activityOnly.Id, "precedence_token fresh_comment_only_token"));
+        await repository.AddVerificationAsync(new VerifyPostInput(
+            activityOnly.Id,
+            VerificationOutcome.WorkedAsWritten,
+            "verification_only_token",
+            "main",
+            "fed987"));
+
+        var originalAndActivity = await repository.CreatePostAsync(
+            PostInput("owner/repo", "precedence_token", "original post match"),
+            [1f],
+            "model-a");
+        await repository.CreateCommentAsync(CommentInput(originalAndActivity.Id, "precedence_token repeated"));
+
+        var otherRepo = await repository.CreatePostAsync(PostInput("other/repo", "other", "plain"), [1f], "model-a");
+        await repository.CreateCommentAsync(CommentInput(otherRepo.Id, "precedence_token"));
+
+        Assert.Equal(
+            [originalAndActivity.Id, activityOnly.Id],
+            await repository.SearchLexicalPostIdsAsync("https://github.com/OWNER/REPO.git", "precedence_token", 10));
+        Assert.Equal(
+            [activityOnly.Id],
+            await repository.SearchLexicalPostIdsAsync("owner/repo", "verification_only_token", 10));
+        Assert.Equal(
+            [activityOnly.Id],
+            await repository.SearchLexicalPostIdsAsync("owner/repo", "fresh_comment_only_token", 10));
+    }
+
+    [Fact]
+    public async Task Blank_verification_notes_are_not_added_to_activity_search()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+        var post = await repository.CreatePostAsync(PostInput("owner/repo", "post", "body"), [1f], "model-a");
+        await repository.AddVerificationAsync(new VerifyPostInput(
+            post.Id,
+            VerificationOutcome.WorkedAsWritten,
+            "   ",
+            "main",
+            "fed987"));
+
+        await using var connection = OpenInspectionConnection();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT(*) FROM post_activity_fts;";
+        Assert.Equal(0L, (long)(await command.ExecuteScalarAsync())!);
+    }
+
+    [Fact]
     public async Task Search_storage_and_hydration_are_strictly_scoped_to_repo()
     {
         var repository = CreateRepository();
         await repository.InitializeAsync();
 
-        var repoA = await repository.CreatePostAsync(PostInput("repo-a", "shared token", "a"), [1f, 0f], "model-a");
-        var repoB = await repository.CreatePostAsync(PostInput("repo-b", "shared token", "b"), [0f, 1f], "model-a");
+        var repoA = await repository.CreatePostAsync(
+            PostInput("https://github.com/Owner/Repo-A.git", "shared token", "a"),
+            [1f, 0f],
+            "model-a");
+        var repoB = await repository.CreatePostAsync(PostInput("owner/repo-b", "shared token", "b"), [0f, 1f], "model-a");
 
-        Assert.Equal([repoA.Id], await repository.SearchLexicalPostIdsAsync("repo-a", "shared", 10));
-        Assert.Equal([repoB.Id], await repository.SearchLexicalPostIdsAsync("repo-b", "shared", 10));
-        Assert.Equal(repoA.Id, Assert.Single(await repository.ReadStoredEmbeddingsAsync("repo-a", "model-a")).PostId);
-        Assert.Equal(repoB.Id, Assert.Single(await repository.ReadStoredEmbeddingsAsync("repo-b", "model-a")).PostId);
+        Assert.Equal("owner/repo-a", repoA.Repo);
+        Assert.Equal([repoA.Id], await repository.SearchLexicalPostIdsAsync("OWNER/REPO-A", "shared", 10));
+        Assert.Equal([repoB.Id], await repository.SearchLexicalPostIdsAsync("owner/repo-b", "shared", 10));
+        Assert.Equal(repoA.Id, Assert.Single(await repository.ReadStoredEmbeddingsAsync("git@github.com:OWNER/REPO-A.git", "model-a")).PostId);
+        Assert.Equal(repoB.Id, Assert.Single(await repository.ReadStoredEmbeddingsAsync("owner/repo-b", "model-a")).PostId);
 
-        var hydrated = await repository.ReadSearchResultsAsync("repo-a", [repoB.Id, repoA.Id]);
+        var hydrated = await repository.ReadSearchResultsAsync("https://github.com/owner/repo-a", [repoB.Id, repoA.Id]);
         var result = Assert.Single(hydrated);
         Assert.Equal(repoA.Id, result.PostId);
-        Assert.Equal("repo-a", result.Repo);
+        Assert.Equal("owner/repo-a", result.Repo);
     }
 
     [Fact]
@@ -235,6 +403,63 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         Assert.Equal(1, page.Offset);
         Assert.Equal(["second", "third"], page.Comments.Select(comment => comment.Content));
         Assert.Equal([2L, 3L], page.Comments.Select(comment => comment.Id));
+    }
+
+    [Fact]
+    public async Task ReadPost_returns_bounded_recent_details_newest_first_and_total_counts()
+    {
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 2, 3, 4, 5, 6, TimeSpan.Zero));
+        var repository = CreateRepository(clock);
+        await repository.InitializeAsync();
+        var post = await repository.CreatePostAsync(PostInput("owner/repo", "post", "content"), [1f], "model-a");
+
+        for (var index = 1; index <= 5; index++)
+        {
+            await repository.CreateCommentAsync(CommentInput(post.Id, $"comment-{index}"));
+        }
+
+        for (var index = 1; index <= 12; index++)
+        {
+            await repository.AddVerificationAsync(new VerifyPostInput(
+                post.Id,
+                VerificationOutcome.WorkedAsWritten,
+                $"verification-{index}",
+                "main",
+                $"commit-{index}"));
+        }
+
+        var result = await repository.ReadPostAsync(post.Id);
+
+        Assert.Equal(5, result.CommentCount);
+        Assert.Equal(12, result.VerificationCount);
+        Assert.Equal(["comment-5", "comment-4", "comment-3"], result.RecentComments.Select(comment => comment.Content));
+        Assert.Equal(Enumerable.Range(3, 10).Reverse().Select(index => $"verification-{index}"),
+            result.RecentVerifications.Select(verification => verification.Note));
+        Assert.All(result.RecentComments, comment =>
+        {
+            Assert.Equal("main", comment.Branch);
+            Assert.Equal("def456", comment.Commit);
+            Assert.Equal("codex", comment.Agent);
+            Assert.Equal("model", comment.Model);
+            Assert.Equal("medium", comment.Effort);
+        });
+
+        var commentPage = await repository.ReadCommentsAsync(post.Id, 5, 0);
+        Assert.Equal(5, commentPage.TotalCount);
+        Assert.Equal(["comment-1", "comment-2", "comment-3", "comment-4", "comment-5"],
+            commentPage.Comments.Select(comment => comment.Content));
+    }
+
+    [Fact]
+    public async Task Distinct_embedding_model_ids_are_sorted_and_not_repo_scoped()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+        await repository.CreatePostAsync(PostInput("owner/one", "one", "body"), [1f], "z-model");
+        await repository.CreatePostAsync(PostInput("owner/two", "two", "body"), [1f], "a-model");
+        await repository.CreatePostAsync(PostInput("owner/three", "three", "body"), [1f], "z-model");
+
+        Assert.Equal(["a-model", "z-model"], await repository.ReadDistinctEmbeddingModelIdsAsync());
     }
 
     [Fact]
@@ -347,6 +572,13 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         }
 
         return result;
+    }
+
+    private static async Task ExecuteInspectionSqlAsync(SqliteConnection connection, string sql)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
     }
 
     public void Dispose()

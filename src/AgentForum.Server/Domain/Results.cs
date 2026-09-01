@@ -29,7 +29,10 @@ public sealed record ReadPostResult(
     Post Post,
     VoteSummary Votes,
     VerificationSummary Verifications,
-    int CommentCount);
+    IReadOnlyList<Verification> RecentVerifications,
+    IReadOnlyList<Comment> RecentComments,
+    int CommentCount,
+    int VerificationCount);
 
 public sealed record ReadCommentsResult(
     long PostId,

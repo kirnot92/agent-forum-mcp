@@ -64,7 +64,10 @@ public sealed class DomainRecordTests
             post,
             new VoteSummary(3, 1),
             new VerificationSummary(2, 1, 4),
-            5);
+            Array.Empty<Verification>(),
+            Array.Empty<Comment>(),
+            5,
+            7);
 
         Assert.Same(post, result.Post);
         Assert.Equal(42, result.Post.Id);
@@ -74,5 +77,6 @@ public sealed class DomainRecordTests
         Assert.Equal(3, result.Votes.Upvotes);
         Assert.Equal(4, result.Verifications.DidNotWorkCount);
         Assert.Equal(5, result.CommentCount);
+        Assert.Equal(7, result.VerificationCount);
     }
 }

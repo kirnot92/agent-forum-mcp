@@ -9,6 +9,7 @@ namespace AgentForum.Server.Persistence;
 
 public sealed partial class SqliteForumRepository : IForumRepository
 {
+    private const int CurrentSchemaVersion = 2;
     private const int SnippetLength = 240;
     private const int HydrationBatchSize = 500;
 
@@ -49,40 +50,61 @@ public sealed partial class SqliteForumRepository : IForumRepository
         try
         {
             await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-            await using var transaction = (SqliteTransaction)await connection
-                .BeginTransactionAsync(cancellationToken)
+            var schemaState = await ReadSchemaStateAsync(connection, cancellationToken)
                 .ConfigureAwait(false);
 
-            try
+            if (schemaState.IsEmpty)
             {
-                await ExecuteNonQueryAsync(connection, transaction, SchemaSql, cancellationToken)
+                await using var transaction = (SqliteTransaction)await connection
+                    .BeginTransactionAsync(cancellationToken)
                     .ConfigureAwait(false);
 
-                await ExecuteNonQueryAsync(
-                        connection,
-                        transaction,
-                        "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (1, $appliedAt);",
-                        cancellationToken,
-                        ("$appliedAt", FormatTimestamp(GetUtcNow())))
-                    .ConfigureAwait(false);
+                try
+                {
+                    await ExecuteNonQueryAsync(connection, transaction, CurrentSchemaSql, cancellationToken)
+                        .ConfigureAwait(false);
+                    await ExecuteNonQueryAsync(
+                            connection,
+                            transaction,
+                            "INSERT INTO schema_migrations(version, applied_at) VALUES ($version, $appliedAt);",
+                            cancellationToken,
+                            ("$version", CurrentSchemaVersion),
+                            ("$appliedAt", FormatTimestamp(GetUtcNow())))
+                        .ConfigureAwait(false);
+                    await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (SqliteException exception) when (exception.Message.Contains("fts5", StringComparison.OrdinalIgnoreCase))
+                {
+                    await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
+                    throw new InvalidOperationException(
+                        "The configured SQLite runtime does not provide the required FTS5 module.",
+                        exception);
+                }
 
-                // Rebuilding is idempotent and also repairs an index if a database was
-                // copied between writing the content row and its FTS shadow tables.
-                await ExecuteNonQueryAsync(
-                        connection,
-                        transaction,
-                        "INSERT INTO posts_fts(posts_fts) VALUES ('rebuild');",
-                        cancellationToken)
-                    .ConfigureAwait(false);
-
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return;
             }
-            catch (SqliteException exception) when (exception.Message.Contains("fts5", StringComparison.OrdinalIgnoreCase))
+
+            if (schemaState.Version is null)
             {
-                await transaction.RollbackAsync(CancellationToken.None).ConfigureAwait(false);
-                throw new InvalidOperationException(
-                    "The configured SQLite runtime does not provide the required FTS5 module.",
-                    exception);
+                throw IncompatibleSchema(
+                    "The database is nonempty but does not contain one readable schema version.");
+            }
+
+            if (schemaState.Version != CurrentSchemaVersion)
+            {
+                throw IncompatibleSchema(
+                    $"The database is version {schemaState.Version}, but the server expects version {CurrentSchemaVersion}.");
+            }
+
+            var missingObjects = RequiredSchemaObjects
+                .Where(required => !schemaState.Objects.Contains(required))
+                .Select(required => required.Name)
+                .ToArray();
+            if (missingObjects.Length > 0)
+            {
+                throw IncompatibleSchema(
+                    $"The database claims version {CurrentSchemaVersion} but is missing required schema objects: " +
+                    string.Join(", ", missingObjects) + ".");
             }
         }
         finally
@@ -104,6 +126,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
         // Encoding performs complete dimension/finite-value validation before the
         // transaction starts. The caller is responsible for normalization.
         var vectorBlob = SqliteFloat32VectorCodec.Encode(normalizedEmbedding);
+        var normalizedRepo = RepositoryKey.Normalize(input.Repo);
         var now = GetUtcNow();
         var timestamp = FormatTimestamp(now);
 
@@ -124,7 +147,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
                     $createdAt, $lastActivityAt);
                 """,
                 cancellationToken,
-                ("$repo", input.Repo),
+                ("$repo", normalizedRepo),
                 ("$title", input.Title),
                 ("$content", input.Content),
                 ("$branch", input.Branch),
@@ -154,7 +177,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
 
         return new Post(
             postId,
-            input.Repo,
+            normalizedRepo,
             input.Title,
             input.Content,
             input.Branch,
@@ -173,22 +196,51 @@ public sealed partial class SqliteForumRepository : IForumRepository
         ValidateId(postId, nameof(postId));
 
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var transaction = (SqliteTransaction)await connection
+            .BeginTransactionAsync(cancellationToken)
+            .ConfigureAwait(false);
         await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
         command.CommandText = ReadPostSql;
         command.Parameters.AddWithValue("$postId", postId);
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        ReadPostResult result;
+        await using (var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false))
         {
-            throw MissingPost(postId);
+            if (!await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                throw MissingPost(postId);
+            }
+
+            var post = ReadPost(reader);
+            result = new ReadPostResult(
+                post,
+                new VoteSummary(reader.GetInt32(11), reader.GetInt32(12)),
+                new VerificationSummary(reader.GetInt32(13), reader.GetInt32(14), reader.GetInt32(15)),
+                Array.Empty<Verification>(),
+                Array.Empty<Comment>(),
+                reader.GetInt32(16),
+                reader.GetInt32(17));
         }
 
-        var post = ReadPost(reader);
-        return new ReadPostResult(
-            post,
-            new VoteSummary(reader.GetInt32(11), reader.GetInt32(12)),
-            new VerificationSummary(reader.GetInt32(13), reader.GetInt32(14), reader.GetInt32(15)),
-            reader.GetInt32(16));
+        var recentVerifications = await ReadRecentVerificationsAsync(
+                connection,
+                transaction,
+                postId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        var recentComments = await ReadRecentCommentsAsync(
+                connection,
+                transaction,
+                postId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        return result with
+        {
+            RecentVerifications = recentVerifications,
+            RecentComments = recentComments
+        };
     }
 
     public async Task<Comment> CreateCommentAsync(
@@ -407,6 +459,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
             throw new ArgumentOutOfRangeException(nameof(limit), limit, "The lexical result limit must be positive.");
         }
 
+        var normalizedRepo = RepositoryKey.Normalize(repo);
         var matchExpression = BuildFtsMatchExpression(query);
         if (matchExpression is null)
         {
@@ -414,8 +467,10 @@ public sealed partial class SqliteForumRepository : IForumRepository
         }
 
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        await using var command = connection.CreateCommand();
-        command.CommandText = """
+        var postIds = new List<long>(limit);
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
             SELECT posts_fts.rowid
             FROM posts_fts
             INNER JOIN posts ON posts.id = posts_fts.rowid
@@ -423,15 +478,44 @@ public sealed partial class SqliteForumRepository : IForumRepository
             ORDER BY bm25(posts_fts), posts_fts.rowid
             LIMIT $limit;
             """;
-        command.Parameters.AddWithValue("$match", matchExpression);
-        command.Parameters.AddWithValue("$repo", repo);
-        command.Parameters.AddWithValue("$limit", limit);
+            command.Parameters.AddWithValue("$match", matchExpression);
+            command.Parameters.AddWithValue("$repo", normalizedRepo);
+            command.Parameters.AddWithValue("$limit", limit);
 
-        var postIds = new List<long>();
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                postIds.Add(reader.GetInt64(0));
+            }
+        }
+
+        if (postIds.Count == limit)
         {
-            postIds.Add(reader.GetInt64(0));
+            return postIds;
+        }
+
+        var seenPostIds = postIds.ToHashSet();
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                SELECT CAST(post_activity_fts.post_id AS INTEGER)
+                FROM post_activity_fts
+                INNER JOIN posts ON posts.id = CAST(post_activity_fts.post_id AS INTEGER)
+                WHERE post_activity_fts MATCH $match AND posts.repo = $repo
+                ORDER BY bm25(post_activity_fts), post_activity_fts.rowid;
+                """;
+            command.Parameters.AddWithValue("$match", matchExpression);
+            command.Parameters.AddWithValue("$repo", normalizedRepo);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (postIds.Count < limit && await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                var postId = reader.GetInt64(0);
+                if (seenPostIds.Add(postId))
+                {
+                    postIds.Add(postId);
+                }
+            }
         }
 
         return postIds;
@@ -444,6 +528,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
     {
         RequireText(repo, nameof(repo));
         RequireText(modelId, nameof(modelId));
+        var normalizedRepo = RepositoryKey.Normalize(repo);
 
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
@@ -454,7 +539,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
             WHERE p.repo = $repo AND e.model_id = $modelId
             ORDER BY e.post_id;
             """;
-        command.Parameters.AddWithValue("$repo", repo);
+        command.Parameters.AddWithValue("$repo", normalizedRepo);
         command.Parameters.AddWithValue("$modelId", modelId);
 
         var embeddings = new List<StoredPostEmbedding>();
@@ -473,6 +558,27 @@ public sealed partial class SqliteForumRepository : IForumRepository
         return embeddings;
     }
 
+    public async Task<IReadOnlyList<string>> ReadDistinctEmbeddingModelIdsAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT DISTINCT model_id
+            FROM post_embeddings
+            ORDER BY model_id COLLATE BINARY;
+            """;
+
+        var modelIds = new List<string>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            modelIds.Add(reader.GetString(0));
+        }
+
+        return modelIds;
+    }
+
     public async Task<IReadOnlyList<PostSearchResult>> ReadSearchResultsAsync(
         string repo,
         IReadOnlyCollection<long> postIds,
@@ -480,6 +586,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
     {
         RequireText(repo, nameof(repo));
         ArgumentNullException.ThrowIfNull(postIds);
+        var normalizedRepo = RepositoryKey.Normalize(repo);
 
         if (postIds.Count == 0)
         {
@@ -519,7 +626,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
                 FROM posts AS p
                 WHERE p.repo = $repo AND p.id IN ({string.Join(", ", parameterNames)});
                 """;
-            command.Parameters.AddWithValue("$repo", repo);
+            command.Parameters.AddWithValue("$repo", normalizedRepo);
 
             await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
             while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -549,6 +656,135 @@ public sealed partial class SqliteForumRepository : IForumRepository
         return tokens.Length == 0
             ? null
             : string.Join(" AND ", tokens.Select(token => $"\"{token}\""));
+    }
+
+    private static async Task<SchemaState> ReadSchemaStateAsync(
+        SqliteConnection connection,
+        CancellationToken cancellationToken)
+    {
+        var objects = new HashSet<SchemaObject>();
+        await using (var objectsCommand = connection.CreateCommand())
+        {
+            objectsCommand.CommandText = """
+                SELECT type, name
+                FROM sqlite_master
+                WHERE name NOT LIKE 'sqlite_%';
+                """;
+            await using var reader = await objectsCommand.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                objects.Add(new SchemaObject(reader.GetString(0), reader.GetString(1)));
+            }
+        }
+
+        if (objects.Count == 0)
+        {
+            return new SchemaState(true, null, objects);
+        }
+
+        if (!objects.Contains(new SchemaObject("table", "schema_migrations")))
+        {
+            return new SchemaState(false, null, objects);
+        }
+
+        try
+        {
+            var versions = new List<int>();
+            await using var command = connection.CreateCommand();
+            command.CommandText = "SELECT version FROM schema_migrations ORDER BY version;";
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+            {
+                versions.Add(reader.GetInt32(0));
+            }
+
+            return versions.Count == 1
+                ? new SchemaState(false, versions[0], objects)
+                : new SchemaState(false, null, objects);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            throw IncompatibleSchema("The database schema version cannot be read.", exception);
+        }
+    }
+
+    private static InvalidOperationException IncompatibleSchema(string detail, Exception? innerException = null) =>
+        new(
+            $"{detail} This server requires database schema version {CurrentSchemaVersion}; " +
+            "recreate the database instead of upgrading it in place.",
+            innerException);
+
+    private static async Task<IReadOnlyList<Verification>> ReadRecentVerificationsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long postId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT id, post_id, outcome, note, branch, commit_hash, agent, model, effort, created_at
+            FROM verifications
+            WHERE post_id = $postId
+            ORDER BY created_at DESC, id DESC
+            LIMIT 10;
+            """;
+        command.Parameters.AddWithValue("$postId", postId);
+
+        var verifications = new List<Verification>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            verifications.Add(new Verification(
+                reader.GetInt64(0),
+                reader.GetInt64(1),
+                (VerificationOutcome)reader.GetInt32(2),
+                GetNullableString(reader, 3),
+                reader.GetString(4),
+                reader.GetString(5),
+                GetNullableString(reader, 6),
+                GetNullableString(reader, 7),
+                GetNullableString(reader, 8),
+                ParseTimestamp(reader.GetString(9))));
+        }
+
+        return verifications;
+    }
+
+    private static async Task<IReadOnlyList<Comment>> ReadRecentCommentsAsync(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        long postId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            SELECT id, post_id, content, branch, commit_hash, agent, model, effort, created_at
+            FROM comments
+            WHERE post_id = $postId
+            ORDER BY created_at DESC, id DESC
+            LIMIT 3;
+            """;
+        command.Parameters.AddWithValue("$postId", postId);
+
+        var comments = new List<Comment>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            comments.Add(new Comment(
+                reader.GetInt64(0),
+                reader.GetInt64(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetString(4),
+                GetNullableString(reader, 5),
+                GetNullableString(reader, 6),
+                GetNullableString(reader, 7),
+                ParseTimestamp(reader.GetString(8))));
+        }
+
+        return comments;
     }
 
     private async Task<SqliteConnection> OpenConnectionAsync(CancellationToken cancellationToken)
@@ -764,12 +1000,43 @@ public sealed partial class SqliteForumRepository : IForumRepository
             COALESCE((SELECT SUM(CASE WHEN outcome = 0 THEN 1 ELSE 0 END) FROM verifications WHERE post_id = p.id), 0),
             COALESCE((SELECT SUM(CASE WHEN outcome = 1 THEN 1 ELSE 0 END) FROM verifications WHERE post_id = p.id), 0),
             COALESCE((SELECT SUM(CASE WHEN outcome = 2 THEN 1 ELSE 0 END) FROM verifications WHERE post_id = p.id), 0),
-            (SELECT COUNT(*) FROM comments WHERE post_id = p.id)
+            (SELECT COUNT(*) FROM comments WHERE post_id = p.id),
+            (SELECT COUNT(*) FROM verifications WHERE post_id = p.id)
         FROM posts AS p
         WHERE p.id = $postId;
         """;
 
-    private const string SchemaSql = """
+    private sealed record SchemaObject(string Type, string Name);
+
+    private sealed record SchemaState(
+        bool IsEmpty,
+        int? Version,
+        IReadOnlySet<SchemaObject> Objects);
+
+    private static readonly SchemaObject[] RequiredSchemaObjects =
+    [
+        new("table", "schema_migrations"),
+        new("table", "posts"),
+        new("table", "comments"),
+        new("table", "votes"),
+        new("table", "verifications"),
+        new("table", "post_embeddings"),
+        new("table", "posts_fts"),
+        new("table", "post_activity_fts"),
+        new("trigger", "posts_fts_after_insert"),
+        new("trigger", "posts_fts_after_delete"),
+        new("trigger", "posts_fts_after_content_update"),
+        new("trigger", "comments_activity_fts_after_insert"),
+        new("trigger", "verifications_activity_fts_after_insert"),
+        new("index", "ix_posts_repo"),
+        new("index", "ix_posts_repo_last_activity"),
+        new("index", "ix_comments_post_created"),
+        new("index", "ix_votes_post"),
+        new("index", "ix_verifications_post_created"),
+        new("index", "ix_post_embeddings_model_post")
+    ];
+
+    private const string CurrentSchemaSql = """
         CREATE TABLE IF NOT EXISTS schema_migrations (
             version INTEGER PRIMARY KEY,
             applied_at TEXT NOT NULL
@@ -865,6 +1132,28 @@ public sealed partial class SqliteForumRepository : IForumRepository
             VALUES ('delete', old.id, old.title, old.content);
             INSERT INTO posts_fts(rowid, title, content)
             VALUES (new.id, new.title, new.content);
+        END;
+
+        CREATE VIRTUAL TABLE post_activity_fts USING fts5(
+            post_id UNINDEXED,
+            activity_type UNINDEXED,
+            content,
+            tokenize = "unicode61 tokenchars '_'"
+        );
+
+        CREATE TRIGGER comments_activity_fts_after_insert
+        AFTER INSERT ON comments
+        BEGIN
+            INSERT INTO post_activity_fts(post_id, activity_type, content)
+            VALUES (new.post_id, 'comment', new.content);
+        END;
+
+        CREATE TRIGGER verifications_activity_fts_after_insert
+        AFTER INSERT ON verifications
+        WHEN new.note IS NOT NULL AND length(trim(new.note)) > 0
+        BEGIN
+            INSERT INTO post_activity_fts(post_id, activity_type, content)
+            VALUES (new.post_id, 'verification', new.note);
         END;
         """;
 }

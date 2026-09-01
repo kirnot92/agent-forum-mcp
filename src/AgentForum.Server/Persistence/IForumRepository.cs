@@ -45,6 +45,9 @@ public interface IForumRepository
         string modelId,
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<string>> ReadDistinctEmbeddingModelIdsAsync(
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<PostSearchResult>> ReadSearchResultsAsync(
         string repo,
         IReadOnlyCollection<long> postIds,
