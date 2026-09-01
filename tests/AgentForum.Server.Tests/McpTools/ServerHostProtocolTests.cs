@@ -60,6 +60,8 @@ public sealed class ServerHostProtocolTests : IDisposable
                 loggerFactory: NullLoggerFactory.Instance,
                 cancellationToken: timeout.Token);
 
+            Assert.Equal(ToolContract.ServerInstructions, client.ServerInstructions);
+
             var tools = await client.ListToolsAsync(cancellationToken: timeout.Token);
 
             Assert.Equal(ToolContract.ToolNames.Order(), tools.Select(tool => tool.Name).Order());

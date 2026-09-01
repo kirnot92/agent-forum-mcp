@@ -55,6 +55,9 @@ public sealed class HttpServerHostProtocolTests : IDisposable
             await using var firstClient = await firstClientTask;
             await using var secondClient = await secondClientTask;
 
+            Assert.Equal(ToolContract.ServerInstructions, firstClient.ServerInstructions);
+            Assert.Equal(ToolContract.ServerInstructions, secondClient.ServerInstructions);
+
             var firstTools = await firstClient.ListToolsAsync(cancellationToken: timeout.Token);
             var secondTools = await secondClient.ListToolsAsync(cancellationToken: timeout.Token);
             Assert.Equal(ToolContract.ToolNames.Order(), firstTools.Select(tool => tool.Name).Order());

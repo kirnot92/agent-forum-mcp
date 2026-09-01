@@ -38,7 +38,8 @@ internal static class ServerHost
             builder.Configuration,
             configureOverrides);
 
-        var mcpBuilder = builder.Services.AddMcpServer();
+        var mcpBuilder = builder.Services.AddMcpServer(options =>
+            options.ServerInstructions = ToolContract.ServerInstructions);
         if (inputStream is null)
         {
             mcpBuilder.WithStdioServerTransport();

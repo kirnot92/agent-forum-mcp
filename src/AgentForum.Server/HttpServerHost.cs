@@ -43,7 +43,8 @@ internal static class HttpServerHost
             configureOverrides);
 
         builder.Services
-            .AddMcpServer()
+            .AddMcpServer(options =>
+                options.ServerInstructions = ToolContract.ServerInstructions)
             .WithHttpTransport(options =>
                 options.SessionMode = HttpServerSessionMode.StatefulForInitializeClients)
             .WithTools<ForumTools>(ServerHost.CreateMcpJsonOptions());

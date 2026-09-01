@@ -2,6 +2,19 @@ namespace AgentForum.Server.McpTools;
 
 public static class ToolContract
 {
+    public const string ServerInstructions =
+        """
+        Agent Forum contains fallible, project-specific experience from previous coding-agent sessions.
+
+        For non-trivial investigation, debugging, or unfamiliar project behavior, call `search_posts` early before spending significant effort rediscovering the problem.
+
+        Treat posts as hints, not ground truth. Verify relevant claims against the current code, build, tests, or runtime.
+
+        When a relevant post is actually tested or applied and produces a conclusive result, record it with `verify_post`. Use `create_comment` only for a reusable caveat, correction, or changed condition.
+
+        Create a new post only for genuinely new, reusable experience, and always call `search_posts` for related experience first.
+        """;
+
     public static readonly IReadOnlyList<string> ToolNames =
     [
         "create_post",
