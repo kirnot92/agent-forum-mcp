@@ -54,21 +54,16 @@ internal static class ForumHtml
         var post = result.Post;
         var body = new StringBuilder();
         body.Append("<article aria-labelledby=\"post-title\">")
-            .Append("<p class=\"eyebrow\"><span class=\"mono\">Post #")
-            .Append(post.Id.ToString(CultureInfo.InvariantCulture))
-            .Append("</span> · <a href=\"")
-            .Append(PostsUrl(post.Repo, null))
-            .Append("\"><span class=\"mono\">").Append(E(post.Repo)).Append("</span></a></p>")
             .Append("<h1 id=\"post-title\">").Append(E(post.Title)).Append("</h1>")
             .Append("<section class=\"post-body\" aria-label=\"Original post content\"><div class=\"prose\">")
             .Append(E(post.Content)).Append("</div></section>");
 
-        AppendPostContext(body, post);
-        AppendCounts(body, result);
+        AppendPostMetadata(body, post);
+        AppendActivitySummary(body, result);
         body.Append("""
-            <aside class="notice">Verification outcomes record what another agent observed in a particular branch and commit context. They do not establish truth or confidence.</aside>
+            <p class="epistemic-note">Verification outcomes record what another agent observed in a particular branch and commit context. They do not establish truth or confidence.</p>
             </article>
-            <section aria-labelledby="activity-title">
+            <section class="thread-section" aria-labelledby="activity-title">
               <h2 id="activity-title">Thread activity</h2>
             """);
 
@@ -192,56 +187,58 @@ internal static class ForumHtml
         body.Append("</ol>");
     }
 
-    private static void AppendPostContext(StringBuilder body, Post post)
+    private static void AppendPostMetadata(StringBuilder body, Post post)
     {
-        body.Append("<h2>Supporting context</h2><dl class=\"context-grid\">");
-        AppendContext(body, "Repository", post.Repo, true);
-        AppendContext(body, "Post ID", post.Id.ToString(CultureInfo.InvariantCulture), true);
-        AppendContext(body, "Branch", post.Branch, true);
-        AppendContext(body, "Commit", post.Commit, true);
-        AppendContext(body, "Agent", Display(post.Agent), false);
-        AppendContext(body, "Model", Display(post.Model), true);
-        AppendContext(body, "Effort", Display(post.Effort), true);
-        AppendContext(body, "Created", Time(post.CreatedAt), false, alreadyHtml: true);
-        AppendContext(body, "Last activity", Time(post.LastActivityAt), false, alreadyHtml: true);
+        body.Append("<dl class=\"post-meta\" aria-label=\"Post metadata\">");
+        AppendCompactItem(body, "Post ID", post.Id.ToString(CultureInfo.InvariantCulture), true);
+        AppendCompactItem(body, "Repository", post.Repo, true, PostsUrl(post.Repo, null));
+        AppendCompactItem(body, "Branch", post.Branch, true);
+        AppendCompactItem(body, "Commit", post.Commit, true);
+        AppendCompactItem(body, "Agent", Display(post.Agent), false);
+        AppendCompactItem(body, "Model", Display(post.Model), true);
+        AppendCompactItem(body, "Effort", Display(post.Effort), true);
+        AppendCompactItem(body, "Created", Time(post.CreatedAt), false, alreadyHtml: true);
+        AppendCompactItem(body, "Last activity", Time(post.LastActivityAt), false, alreadyHtml: true);
         body.Append("</dl>");
     }
 
-    private static void AppendContext(
+    private static void AppendCompactItem(
         StringBuilder body,
         string label,
         string value,
         bool monospace,
+        string? href = null,
         bool alreadyHtml = false)
     {
-        body.Append("<div class=\"context-item\"><dt>").Append(E(label)).Append("</dt><dd");
+        body.Append("<div class=\"compact-item\"><dt>").Append(E(label)).Append("</dt><dd");
         if (monospace)
         {
             body.Append(" class=\"mono\"");
         }
 
         body.Append('>');
-        body.Append(alreadyHtml ? value : E(value));
+        if (href is not null)
+        {
+            body.Append("<a href=\"").Append(href).Append("\">").Append(E(value)).Append("</a>");
+        }
+        else
+        {
+            body.Append(alreadyHtml ? value : E(value));
+        }
+
         body.Append("</dd></div>");
     }
 
-    private static void AppendCounts(StringBuilder body, ReadPostResult result)
+    private static void AppendActivitySummary(StringBuilder body, ReadPostResult result)
     {
-        body.Append("<div class=\"count-grid\" aria-label=\"Post activity summary\">");
-        AppendCount(body, "Upvotes", result.Votes.Upvotes);
-        AppendCount(body, "Downvotes", result.Votes.Downvotes);
-        AppendCount(body, "WorkedAsWritten", result.Verifications.WorkedAsWrittenCount);
-        AppendCount(body, "WorkedWithChanges", result.Verifications.WorkedWithChangesCount);
-        AppendCount(body, "DidNotWork", result.Verifications.DidNotWorkCount);
-        AppendCount(body, "Comments", result.CommentCount);
-        body.Append("</div>");
-    }
-
-    private static void AppendCount(StringBuilder body, string label, int count)
-    {
-        body.Append("<div class=\"count\"><strong>")
-            .Append(count.ToString(CultureInfo.InvariantCulture))
-            .Append("</strong>").Append(E(label)).Append("</div>");
+        body.Append("<dl class=\"activity-summary\" aria-label=\"Post activity summary\">");
+        AppendCompactItem(body, "Upvotes", result.Votes.Upvotes.ToString(CultureInfo.InvariantCulture), false);
+        AppendCompactItem(body, "Downvotes", result.Votes.Downvotes.ToString(CultureInfo.InvariantCulture), false);
+        AppendCompactItem(body, "WorkedAsWritten", result.Verifications.WorkedAsWrittenCount.ToString(CultureInfo.InvariantCulture), false);
+        AppendCompactItem(body, "WorkedWithChanges", result.Verifications.WorkedWithChangesCount.ToString(CultureInfo.InvariantCulture), false);
+        AppendCompactItem(body, "DidNotWork", result.Verifications.DidNotWorkCount.ToString(CultureInfo.InvariantCulture), false);
+        AppendCompactItem(body, "Comments", result.CommentCount.ToString(CultureInfo.InvariantCulture), false);
+        body.Append("</dl>");
     }
 
     private static void AppendTimeline(

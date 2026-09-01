@@ -43,8 +43,7 @@ internal static class ForumStylesheet
         .muted { color: var(--muted); }
         .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
-        .notice, .error-panel { margin: 1.5rem 0 2rem; padding: 1rem 1.1rem; border: 1px solid var(--line); border-radius: .75rem; background: #fafaf8; }
-        .notice { color: #4f4f4b; }
+        .error-panel { margin: 1.5rem 0 2rem; padding: 1rem 1.1rem; border: 1px solid var(--line); border-radius: .75rem; background: #fafaf8; }
         .error-panel h1 { font-size: 1.55rem; }
         .error-code { color: var(--muted); font-family: ui-monospace, monospace; }
 
@@ -61,15 +60,16 @@ internal static class ForumStylesheet
         .post-card .snippet { margin: .55rem 0 .7rem; color: #494945; }
         .meta-row { display: flex; flex-wrap: wrap; gap: .35rem 1rem; color: var(--muted); font-size: .78rem; }
 
-        .post-body { margin: 1.75rem 0; padding: 1.4rem; border: 1px solid var(--line); border-radius: .8rem; background: var(--surface); }
-        .post-body .prose { font-size: 1.02rem; }
-        .context-grid, .count-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .8rem 1.5rem; }
-        .context-grid { margin: 1.25rem 0; }
-        .context-item dt { color: var(--muted); font-size: .75rem; }
-        .context-item dd { margin: .1rem 0 0; overflow-wrap: anywhere; }
-        .count-grid { margin: 1.5rem 0; padding: 1rem 0; border-block: 1px solid var(--line); }
-        .count { color: #464642; font-size: .82rem; }
-        .count strong { display: block; color: var(--text); font-size: 1rem; font-weight: 620; }
+        .post-body { margin: 1.5rem 0 1.25rem; }
+        .post-body .prose { font-size: 1.05rem; line-height: 1.75; }
+        .post-meta, .activity-summary { display: flex; flex-wrap: wrap; gap: .4rem 1.15rem; margin: 0; padding: 0; }
+        .post-meta { padding-top: .9rem; border-top: 1px solid var(--line); }
+        .activity-summary { margin-top: .55rem; }
+        .compact-item { display: flex; min-width: 0; max-width: 100%; gap: .3rem; align-items: baseline; color: var(--muted); font-size: .76rem; }
+        .compact-item dt { flex: 0 0 auto; }
+        .compact-item dd { min-width: 0; margin: 0; color: #4b4b47; overflow-wrap: anywhere; }
+        .epistemic-note { margin: .85rem 0 0; color: var(--muted); font-size: .76rem; }
+        .thread-section h2 { margin-top: 1.5rem; }
 
         .timeline { border-left: 1px solid var(--line); margin-left: .4rem; padding-left: 1.2rem; }
         .timeline-item { position: relative; margin: 0 0 1rem; padding: 1rem 1.05rem; border: 1px solid var(--line); border-radius: .7rem; background: var(--surface); }
@@ -85,9 +85,8 @@ internal static class ForumStylesheet
           .header-inner, .page { width: min(100% - 1.25rem, 760px); }
           .page { padding-block: 2.25rem 3.5rem; }
           .search-form { grid-template-columns: 1fr; }
-          .context-grid { grid-template-columns: 1fr; }
-          .count-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-          .post-body { padding: 1rem; }
+          .post-meta, .activity-summary { gap: .4rem .8rem; }
+          .compact-item { flex: 1 1 10rem; }
           .timeline-head { display: block; }
           .timeline-head > time { display: block; margin-top: .25rem; }
         }

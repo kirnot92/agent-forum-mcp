@@ -44,8 +44,13 @@ public sealed class ForumWebEndpointsTests
         Assert.Equal("text/css", cssResponse.Content.Headers.ContentType!.MediaType);
         AssertSecurityHeaders(cssResponse);
         Assert.Contains("@media (max-width: 640px)", css);
-        Assert.Contains(".count-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }", css);
+        Assert.Contains(".post-meta, .activity-summary { display: flex; flex-wrap: wrap;", css);
+        Assert.Contains(".compact-item dd { min-width: 0; margin: 0; color: #4b4b47; overflow-wrap: anywhere; }", css);
+        Assert.Contains(".compact-item { flex: 1 1 10rem; }", css);
         Assert.Contains(".timeline-head > time { display: block; margin-top: .25rem; }", css);
+        Assert.DoesNotContain(".context-grid", css);
+        Assert.DoesNotContain(".count-grid", css);
+        Assert.DoesNotContain(".notice", css);
         Assert.Contains(":focus-visible", css);
         Assert.DoesNotContain("javascript", css, StringComparison.OrdinalIgnoreCase);
 
@@ -126,6 +131,10 @@ public sealed class ForumWebEndpointsTests
             "model\"bad",
             "effort<script>"));
 
+        await fixture.Service.VotePostAsync(new VotePostInput(post.Id, 1, "vote-agent-1", "vote-model-1"));
+        await fixture.Service.VotePostAsync(new VotePostInput(post.Id, 1, "vote-agent-2", "vote-model-2"));
+        await fixture.Service.VotePostAsync(new VotePostInput(post.Id, -1, "vote-agent-3", "vote-model-3"));
+
         await fixture.Service.CreateCommentAsync(new CreateCommentInput(
             post.Id,
             "comment <img src=x onerror=alert(3)>\nsecond line",
@@ -167,6 +176,36 @@ public sealed class ForumWebEndpointsTests
         Assert.Contains("changed &lt;script&gt;alert(4)&lt;/script&gt;", html);
         Assert.Contains("comment-model", html);
         Assert.Contains("verify-effort-11", html);
+        Assert.Contains("<dt>Post ID</dt>", html);
+        Assert.Contains("<dt>Repository</dt>", html);
+        Assert.Contains("<dt>Branch</dt>", html);
+        Assert.Contains("<dt>Commit</dt>", html);
+        Assert.Contains("<dt>Agent</dt>", html);
+        Assert.Contains("<dt>Model</dt>", html);
+        Assert.Contains("<dt>Effort</dt>", html);
+        Assert.Contains("<dt>Created</dt>", html);
+        Assert.Contains("<dt>Last activity</dt>", html);
+        Assert.Contains("<dt>Upvotes</dt><dd>2</dd>", html);
+        Assert.Contains("<dt>Downvotes</dt><dd>1</dd>", html);
+        Assert.Contains("<dt>WorkedAsWritten</dt><dd>10</dd>", html);
+        Assert.Contains("<dt>WorkedWithChanges</dt><dd>1</dd>", html);
+        Assert.Contains("<dt>DidNotWork</dt><dd>0</dd>", html);
+        Assert.Contains("<dt>Comments</dt><dd>1</dd>", html);
+        Assert.DoesNotContain("Supporting context", html);
+        Assert.DoesNotContain("context-grid", html);
+        Assert.DoesNotContain("count-grid", html);
+        Assert.DoesNotContain("class=\"notice\"", html);
+
+        var titleIndex = html.IndexOf("&lt;script&gt;alert(&quot;title&quot;)&lt;/script&gt;", StringComparison.Ordinal);
+        var bodyIndex = html.IndexOf("line one\nline two", StringComparison.Ordinal);
+        var metadataIndex = html.IndexOf("aria-label=\"Post metadata\"", StringComparison.Ordinal);
+        var summaryIndex = html.IndexOf("aria-label=\"Post activity summary\"", StringComparison.Ordinal);
+        var epistemicIndex = html.IndexOf("class=\"epistemic-note\"", StringComparison.Ordinal);
+        var activityIndex = html.IndexOf("Thread activity", StringComparison.Ordinal);
+        Assert.True(
+            titleIndex >= 0 && titleIndex < bodyIndex && bodyIndex < metadataIndex &&
+            metadataIndex < summaryIndex && summaryIndex < epistemicIndex && epistemicIndex < activityIndex,
+            "Detail hierarchy should prioritize title and original content before compact secondary context and activity.");
         Assert.True(
             html.IndexOf("Comment <span", StringComparison.Ordinal) <
             html.IndexOf("Verification <span", StringComparison.Ordinal),
