@@ -230,7 +230,7 @@ public sealed class SqliteForumRepositoryTests : IDisposable
             "model-a"));
 
         Assert.Empty(await repository.SearchLexicalPostIdsAsync("repo-a", "invalid", 10));
-        Assert.Empty(await repository.ReadStoredEmbeddingsAsync("repo-a", "model-a"));
+        Assert.Empty(await repository.ReadAllStoredEmbeddingsAsync("model-a"));
 
         var vector = new[] { 0.25f, -0.5f, 0.75f };
         var post = await repository.CreatePostAsync(
@@ -241,7 +241,8 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         Assert.Equal(1, post.Id);
         Assert.Equal([post.Id], await repository.SearchLexicalPostIdsAsync("repo-a", "Parser.cs CS1002", 10));
 
-        var stored = Assert.Single(await repository.ReadStoredEmbeddingsAsync("repo-a", "model-a"));
+        var stored = Assert.Single(await repository.ReadAllStoredEmbeddingsAsync("model-a"));
+        Assert.Equal("repo-a", stored.Repo);
         Assert.Equal(post.Id, stored.PostId);
         Assert.Equal("model-a", stored.ModelId);
         Assert.Equal(3, stored.Dimensions);
@@ -397,8 +398,9 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         Assert.Equal("owner/repo-a", repoA.Repo);
         Assert.Equal([repoA.Id], await repository.SearchLexicalPostIdsAsync("OWNER/REPO-A", "shared", 10));
         Assert.Equal([repoB.Id], await repository.SearchLexicalPostIdsAsync("owner/repo-b", "shared", 10));
-        Assert.Equal(repoA.Id, Assert.Single(await repository.ReadStoredEmbeddingsAsync("git@github.com:OWNER/REPO-A.git", "model-a")).PostId);
-        Assert.Equal(repoB.Id, Assert.Single(await repository.ReadStoredEmbeddingsAsync("owner/repo-b", "model-a")).PostId);
+        var storedEmbeddings = await repository.ReadAllStoredEmbeddingsAsync("model-a");
+        Assert.Equal(repoA.Id, Assert.Single(storedEmbeddings, embedding => embedding.Repo == "owner/repo-a").PostId);
+        Assert.Equal(repoB.Id, Assert.Single(storedEmbeddings, embedding => embedding.Repo == "owner/repo-b").PostId);
 
         var hydrated = await repository.ReadSearchResultsAsync("https://github.com/owner/repo-a", [repoB.Id, repoA.Id]);
         var result = Assert.Single(hydrated);
@@ -410,7 +412,7 @@ public sealed class SqliteForumRepositoryTests : IDisposable
             await repository.SearchLexicalPostIdsAsync(null, "shared", 10));
         Assert.Equal(
             [repoA.Id, repoB.Id],
-            (await repository.ReadStoredEmbeddingsAsync(null, "model-a")).Select(embedding => embedding.PostId));
+            storedEmbeddings.Select(embedding => embedding.PostId));
         Assert.Equal(
             [repoB.Id, repoA.Id],
             (await repository.ReadSearchResultsAsync(null, [repoB.Id, repoA.Id])).Select(post => post.PostId));

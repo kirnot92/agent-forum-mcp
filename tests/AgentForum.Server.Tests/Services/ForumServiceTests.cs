@@ -2,6 +2,7 @@ using AgentForum.Server.Configuration;
 using AgentForum.Server.Domain;
 using AgentForum.Server.Embeddings;
 using AgentForum.Server.Persistence;
+using AgentForum.Server.Search;
 using AgentForum.Server.Services;
 
 namespace AgentForum.Server.Tests.Services;
@@ -80,7 +81,7 @@ public sealed class ForumServiceTests : IDisposable
         var post = await service.CreatePostAsync(PostInput("repo-a", "A title", "Observed content"));
 
         Assert.Equal("A title\n\nObserved content", Assert.Single(provider.Texts));
-        var stored = Assert.Single(await CreateRepository().ReadStoredEmbeddingsAsync("repo-a", ModelId));
+        var stored = Assert.Single(await CreateRepository().ReadAllStoredEmbeddingsAsync(ModelId));
         Assert.Equal([0.6f, 0.8f], stored.Vector);
         Assert.Equal(post.Id, stored.PostId);
     }
@@ -114,8 +115,29 @@ public sealed class ForumServiceTests : IDisposable
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => service.CreatePostAsync(PostInput("repo-a", "not stored", "not stored")));
 
-        Assert.Empty(await CreateRepository().ReadStoredEmbeddingsAsync("repo-a", ModelId));
+        Assert.Empty(await CreateRepository().ReadAllStoredEmbeddingsAsync(ModelId));
         Assert.Empty(await CreateRepository().SearchLexicalPostIdsAsync("repo-a", "stored", 10));
+    }
+
+    [Fact]
+    public async Task CreatePost_WhenPostCommitIndexAddFails_MarksIndexStaleAndDoesNotReportSuccess()
+    {
+        var repository = CreateRepository();
+        var index = new FailingAddVectorSearchIndex();
+        var service = new ForumService(
+            repository,
+            new RecordingEmbeddingProvider(_ => [1f]),
+            index,
+            new EmbeddingOptions { ModelId = ModelId });
+        await service.InitializeAsync();
+
+        var exception = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => service.CreatePostAsync(PostInput("repo-a", "stored", "despite index failure")));
+
+        Assert.Contains("must be rebuilt", exception.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.True(index.IsStale);
+        Assert.Single(await repository.ReadAllStoredEmbeddingsAsync(ModelId));
+        Assert.Single(await repository.SearchLexicalPostIdsAsync("repo-a", "stored", 10));
     }
 
     [Fact]
@@ -183,7 +205,9 @@ public sealed class ForumServiceTests : IDisposable
         var service = new ForumService(
             repository,
             new RecordingEmbeddingProvider(_ => [1f, 0f]),
+            new InMemoryExactVectorSearchIndex(repository, new EmbeddingOptions { ModelId = ModelId }),
             new EmbeddingOptions { ModelId = ModelId });
+        await service.InitializeAsync();
 
         var exception = await Assert.ThrowsAsync<InvalidDataException>(
             () => service.SearchPostsAsync("repo-a", "query"));
@@ -286,6 +310,9 @@ public sealed class ForumServiceTests : IDisposable
         new(
             repository,
             provider,
+            new InMemoryExactVectorSearchIndex(
+                repository,
+                new EmbeddingOptions { ModelId = ModelId }),
             new EmbeddingOptions { ModelId = ModelId });
 
     private SqliteForumRepository CreateRepository() =>
@@ -314,5 +341,26 @@ public sealed class ForumServiceTests : IDisposable
             Texts.Add(text);
             return Task.FromResult(embed(text));
         }
+    }
+
+    private sealed class FailingAddVectorSearchIndex : IVectorSearchIndex
+    {
+        public bool IsStale { get; private set; }
+
+        public Task InitializeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+
+        public IReadOnlyList<long> Search(
+            string? repo,
+            ReadOnlySpan<float> normalizedQueryEmbedding,
+            int limit,
+            CancellationToken cancellationToken = default) =>
+            IsStale
+                ? throw new InvalidOperationException("stale")
+                : Array.Empty<long>();
+
+        public void Add(string repo, long postId, ReadOnlySpan<float> normalizedEmbedding) =>
+            throw new InvalidOperationException("simulated add failure");
+
+        public void MarkStale(Exception cause) => IsStale = true;
     }
 }

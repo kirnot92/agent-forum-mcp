@@ -1,6 +1,7 @@
 using AgentForum.Server.Configuration;
 using AgentForum.Server.Embeddings;
 using AgentForum.Server.Persistence;
+using AgentForum.Server.Search;
 using AgentForum.Server.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -27,6 +28,9 @@ internal static class AgentForumServiceRegistration
         services.AddSingleton<SqliteForumRepository>();
         services.AddSingleton<IForumRepository>(serviceProvider =>
             serviceProvider.GetRequiredService<SqliteForumRepository>());
+        services.AddSingleton<InMemoryExactVectorSearchIndex>();
+        services.AddSingleton<IVectorSearchIndex>(serviceProvider =>
+            serviceProvider.GetRequiredService<InMemoryExactVectorSearchIndex>());
         services.AddSingleton<IEmbeddingProvider, LlamaSharpQwenEmbeddingProvider>();
         services.AddSingleton<ForumService>();
 

@@ -40,8 +40,7 @@ public interface IForumRepository
         int limit,
         CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<StoredPostEmbedding>> ReadStoredEmbeddingsAsync(
-        string? repo,
+    Task<IReadOnlyList<StoredPostEmbedding>> ReadAllStoredEmbeddingsAsync(
         string modelId,
         CancellationToken cancellationToken = default);
 
@@ -60,6 +59,7 @@ public interface IForumRepository
 }
 
 public sealed record StoredPostEmbedding(
+    string Repo,
     long PostId,
     string ModelId,
     int Dimensions,

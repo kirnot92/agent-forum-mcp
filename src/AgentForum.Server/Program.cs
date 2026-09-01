@@ -1,6 +1,7 @@
 using AgentForum.Server.Configuration;
 using AgentForum.Server.Embeddings;
 using AgentForum.Server.Persistence;
+using AgentForum.Server.Search;
 using AgentForum.Server.Services;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -19,6 +20,9 @@ public static class Program
         await repository.InitializeAsync().ConfigureAwait(false);
         await EmbeddingModelCompatibility
             .EnsureCompatibleAsync(repository, embeddingOptions.ModelId)
+            .ConfigureAwait(false);
+        await app.Services.GetRequiredService<IVectorSearchIndex>()
+            .InitializeAsync()
             .ConfigureAwait(false);
 
         CudaNativeLibrary.Configure();

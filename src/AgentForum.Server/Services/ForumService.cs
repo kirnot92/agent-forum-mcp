@@ -10,17 +10,20 @@ public sealed class ForumService
 {
     private readonly IForumRepository _repository;
     private readonly IEmbeddingProvider _embeddingProvider;
+    private readonly IVectorSearchIndex _vectorSearchIndex;
     private readonly string _embeddingModelId;
     private readonly TimeProvider _timeProvider;
 
     public ForumService(
         IForumRepository repository,
         IEmbeddingProvider embeddingProvider,
+        IVectorSearchIndex vectorSearchIndex,
         EmbeddingOptions embeddingOptions,
         TimeProvider? timeProvider = null)
     {
         _repository = repository ?? throw new ArgumentNullException(nameof(repository));
         _embeddingProvider = embeddingProvider ?? throw new ArgumentNullException(nameof(embeddingProvider));
+        _vectorSearchIndex = vectorSearchIndex ?? throw new ArgumentNullException(nameof(vectorSearchIndex));
         ArgumentNullException.ThrowIfNull(embeddingOptions);
 
         if (string.IsNullOrWhiteSpace(embeddingOptions.ModelId))
@@ -38,6 +41,7 @@ public sealed class ForumService
         await EmbeddingModelCompatibility
             .EnsureCompatibleAsync(_repository, _embeddingModelId, cancellationToken)
             .ConfigureAwait(false);
+        await _vectorSearchIndex.InitializeAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<Post> CreatePostAsync(
@@ -52,9 +56,25 @@ public sealed class ForumService
             .ConfigureAwait(false);
         var normalizedEmbedding = VectorMath.Normalize(embedding);
 
-        return await _repository
+        var post = await _repository
             .CreatePostAsync(normalizedInput, normalizedEmbedding, _embeddingModelId, cancellationToken)
             .ConfigureAwait(false);
+
+        try
+        {
+            // The database is already committed. Do not honor request cancellation
+            // while making the corresponding in-memory entry visible.
+            _vectorSearchIndex.Add(post.Repo, post.Id, normalizedEmbedding);
+        }
+        catch (Exception exception)
+        {
+            _vectorSearchIndex.MarkStale(exception);
+            throw new InvalidOperationException(
+                "The post was stored, but the in-memory vector index could not be updated and must be rebuilt.",
+                exception);
+        }
+
+        return post;
     }
 
     public Task<IReadOnlyList<PostSearchResult>> SearchPostsAsync(
@@ -94,17 +114,13 @@ public sealed class ForumService
             query,
             HybridSearchRanker.CandidateLimit,
             cancellationToken);
-        var embeddingsTask = _repository.ReadStoredEmbeddingsAsync(
+        var vectorIds = _vectorSearchIndex.Search(
             repo,
-            _embeddingModelId,
+            normalizedQueryEmbedding,
+            HybridSearchRanker.CandidateLimit,
             cancellationToken);
 
-        await Task.WhenAll(lexicalTask, embeddingsTask).ConfigureAwait(false);
-
         var lexicalIds = await lexicalTask.ConfigureAwait(false);
-        var vectorIds = RankVectorCandidates(
-            normalizedQueryEmbedding,
-            await embeddingsTask.ConfigureAwait(false));
 
         var candidateIds = lexicalIds.Concat(vectorIds).Distinct().ToArray();
         if (candidateIds.Length == 0)
@@ -209,32 +225,4 @@ public sealed class ForumService
         return _repository.AddVerificationAsync(input, cancellationToken);
     }
 
-    private static IReadOnlyList<long> RankVectorCandidates(
-        float[] queryEmbedding,
-        IReadOnlyList<StoredPostEmbedding> storedEmbeddings)
-    {
-        foreach (var stored in storedEmbeddings)
-        {
-            if (stored.Dimensions != queryEmbedding.Length || stored.Vector.Length != stored.Dimensions)
-            {
-                throw new InvalidDataException(
-                    $"Post {stored.PostId} has an incompatible {FormatDimensions(stored.Dimensions)} embedding; " +
-                    $"the configured model produced {FormatDimensions(queryEmbedding.Length)}.");
-            }
-        }
-
-        return storedEmbeddings
-            .Select(stored => new
-            {
-                stored.PostId,
-                Similarity = VectorMath.CosineSimilarity(queryEmbedding, stored.Vector),
-            })
-            .OrderByDescending(candidate => candidate.Similarity)
-            .ThenBy(candidate => candidate.PostId)
-            .Take(HybridSearchRanker.CandidateLimit)
-            .Select(candidate => candidate.PostId)
-            .ToArray();
-    }
-
-    private static string FormatDimensions(int dimensions) => $"{dimensions}-dimension";
 }

@@ -171,7 +171,10 @@ public sealed partial class SqliteForumRepository : IForumRepository
                 ("$vectorBlob", vectorBlob))
             .ConfigureAwait(false);
 
-        await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+        // Once the durable write begins, request cancellation must not create an
+        // ambiguous "committed but reported canceled" result for the vector index.
+        cancellationToken.ThrowIfCancellationRequested();
+        await transaction.CommitAsync(CancellationToken.None).ConfigureAwait(false);
 
         return new Post(
             postId,
@@ -529,47 +532,33 @@ public sealed partial class SqliteForumRepository : IForumRepository
         return postIds;
     }
 
-    public async Task<IReadOnlyList<StoredPostEmbedding>> ReadStoredEmbeddingsAsync(
-        string? repo,
+    public async Task<IReadOnlyList<StoredPostEmbedding>> ReadAllStoredEmbeddingsAsync(
         string modelId,
         CancellationToken cancellationToken = default)
     {
         RequireText(modelId, nameof(modelId));
-        var normalizedRepo = repo is null ? null : RepositoryKey.Normalize(repo);
 
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         await using var command = connection.CreateCommand();
-        command.CommandText = normalizedRepo is null
-            ? """
-                SELECT e.post_id, e.model_id, e.dimensions, e.vector_blob
-                FROM post_embeddings AS e
-                INNER JOIN posts AS p ON p.id = e.post_id
-                WHERE e.model_id = $modelId
-                ORDER BY e.post_id;
-                """
-            : """
-                SELECT e.post_id, e.model_id, e.dimensions, e.vector_blob
-                FROM post_embeddings AS e
-                INNER JOIN posts AS p ON p.id = e.post_id
-                WHERE p.repo = $repo AND e.model_id = $modelId
-                ORDER BY e.post_id;
-                """;
-        if (normalizedRepo is not null)
-        {
-            command.Parameters.AddWithValue("$repo", normalizedRepo);
-        }
-
+        command.CommandText = """
+            SELECT p.repo, e.post_id, e.model_id, e.dimensions, e.vector_blob
+            FROM post_embeddings AS e
+            INNER JOIN posts AS p ON p.id = e.post_id
+            WHERE e.model_id = $modelId
+            ORDER BY e.post_id;
+            """;
         command.Parameters.AddWithValue("$modelId", modelId);
 
         var embeddings = new List<StoredPostEmbedding>();
         await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            var dimensions = reader.GetInt32(2);
-            var blob = (byte[])reader.GetValue(3);
+            var dimensions = reader.GetInt32(3);
+            var blob = (byte[])reader.GetValue(4);
             embeddings.Add(new StoredPostEmbedding(
-                reader.GetInt64(0),
-                reader.GetString(1),
+                RepositoryKey.Normalize(reader.GetString(0)),
+                reader.GetInt64(1),
+                reader.GetString(2),
                 dimensions,
                 SqliteFloat32VectorCodec.Decode(blob, dimensions)));
         }

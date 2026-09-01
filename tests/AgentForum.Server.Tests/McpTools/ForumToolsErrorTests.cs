@@ -4,6 +4,7 @@ using AgentForum.Server.Embeddings;
 using AgentForum.Server.McpTools;
 using AgentForum.Server.Persistence;
 using AgentForum.Server.Services;
+using AgentForum.Server.Search;
 using ModelContextProtocol;
 
 namespace AgentForum.Server.Tests.McpTools;
@@ -61,6 +62,9 @@ public sealed class ForumToolsErrorTests : IDisposable
         new(
             repository,
             new StubEmbeddingProvider(),
+            new InMemoryExactVectorSearchIndex(
+                repository,
+                new EmbeddingOptions { ModelId = "test-model" }),
             new EmbeddingOptions { ModelId = "test-model" });
 
     private static async Task AssertConciseError(Func<Task> action)
