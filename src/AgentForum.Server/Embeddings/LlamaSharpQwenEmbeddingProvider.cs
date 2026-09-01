@@ -134,11 +134,12 @@ public sealed class LlamaSharpQwenEmbeddingProvider : IEmbeddingProvider, IDispo
     {
         ArgumentNullException.ThrowIfNull(options);
 
+        var gpuLayerCount = ValidateGpuLayerCount(options.GpuLayerCount);
         var modelPath = ValidateModelPath(options.ModelPath, options.ModelId);
         var modelParameters = new ModelParams(modelPath)
         {
             ContextSize = options.ContextSize,
-            GpuLayerCount = options.GpuLayerCount,
+            GpuLayerCount = gpuLayerCount,
             Embeddings = true,
 
             // Qwen3-Embedding is trained to use the final token representation.
@@ -157,6 +158,18 @@ public sealed class LlamaSharpQwenEmbeddingProvider : IEmbeddingProvider, IDispo
             weights.Dispose();
             throw;
         }
+    }
+
+    internal static int ValidateGpuLayerCount(int gpuLayerCount)
+    {
+        if (gpuLayerCount < EmbeddingOptions.AllGpuLayers || gpuLayerCount == 0)
+        {
+            throw new InvalidOperationException(
+                "Embedding:GpuLayerCount must be -1 for all GPU layers or a positive layer count; " +
+                $"received {gpuLayerCount}. CPU-only inference is not supported by this server build.");
+        }
+
+        return gpuLayerCount;
     }
 
     private void EnterEmbeddingCall()

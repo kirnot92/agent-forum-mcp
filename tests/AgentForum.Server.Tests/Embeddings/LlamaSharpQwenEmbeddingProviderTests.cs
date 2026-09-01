@@ -48,6 +48,29 @@ public sealed class LlamaSharpQwenEmbeddingProviderTests
         }
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-2)]
+    public void ValidateGpuLayerCount_RejectsCpuOnlyOrInvalidValues(int gpuLayerCount)
+    {
+        var exception = Assert.Throws<InvalidOperationException>(
+            () => LlamaSharpQwenEmbeddingProvider.ValidateGpuLayerCount(gpuLayerCount));
+
+        Assert.Contains("GpuLayerCount", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("CPU-only", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(1)]
+    [InlineData(28)]
+    public void ValidateGpuLayerCount_AcceptsFullOrPartialGpuOffload(int gpuLayerCount)
+    {
+        Assert.Equal(
+            gpuLayerCount,
+            LlamaSharpQwenEmbeddingProvider.ValidateGpuLayerCount(gpuLayerCount));
+    }
+
     [Fact]
     public async Task EmbedAsync_ReturnsNormalizedCopyOfSinglePooledVector()
     {
