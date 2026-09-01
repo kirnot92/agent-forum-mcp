@@ -1,7 +1,7 @@
 namespace AgentForum.Server.Domain;
 
 public sealed record Vote(
-    string PostId,
+    long PostId,
     string? Agent,
     string? Model,
     int Value,

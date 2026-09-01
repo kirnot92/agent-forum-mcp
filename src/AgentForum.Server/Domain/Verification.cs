@@ -2,14 +2,14 @@ namespace AgentForum.Server.Domain;
 
 public enum VerificationOutcome
 {
-    WorkedAsWritten,
-    WorkedWithChanges,
-    DidNotWork
+    WorkedAsWritten = 0,
+    WorkedWithChanges = 1,
+    DidNotWork = 2
 }
 
 public sealed record Verification(
-    string Id,
-    string PostId,
+    long Id,
+    long PostId,
     VerificationOutcome Outcome,
     string? Note,
     string Branch,

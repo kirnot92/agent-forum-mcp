@@ -10,7 +10,8 @@ public sealed record VerificationSummary(
     int DidNotWorkCount);
 
 public sealed record PostSearchResult(
-    string PostId,
+    long PostId,
+    string Repo,
     string Title,
     string Snippet,
     string Branch,
@@ -31,7 +32,7 @@ public sealed record ReadPostResult(
     int CommentCount);
 
 public sealed record ReadCommentsResult(
-    string PostId,
+    long PostId,
     IReadOnlyList<Comment> Comments,
     int TotalCount,
     int Limit,

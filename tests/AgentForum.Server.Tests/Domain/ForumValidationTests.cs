@@ -21,6 +21,7 @@ public sealed class ForumValidationTests
     [InlineData("Content")]
     [InlineData("Branch")]
     [InlineData("Commit")]
+    [InlineData("Repo")]
     public void CreatePost_RejectsWhitespaceRequiredFields(string field)
     {
         var input = field switch
@@ -29,6 +30,7 @@ public sealed class ForumValidationTests
             "Content" => ValidPost() with { Content = "\t" },
             "Branch" => ValidPost() with { Branch = "\r\n" },
             "Commit" => ValidPost() with { Commit = string.Empty },
+            "Repo" => ValidPost() with { Repo = " " },
             _ => throw new ArgumentOutOfRangeException(nameof(field))
         };
 
@@ -74,7 +76,6 @@ public sealed class ForumValidationTests
     }
 
     [Theory]
-    [InlineData("PostId")]
     [InlineData("Content")]
     [InlineData("Branch")]
     [InlineData("Commit")]
@@ -82,7 +83,6 @@ public sealed class ForumValidationTests
     {
         var input = field switch
         {
-            "PostId" => ValidComment() with { PostId = " " },
             "Content" => ValidComment() with { Content = "\t" },
             "Branch" => ValidComment() with { Branch = "\r\n" },
             "Commit" => ValidComment() with { Commit = string.Empty },
@@ -93,11 +93,20 @@ public sealed class ForumValidationTests
     }
 
     [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void CreateComment_RequiresPositivePostId(long postId)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => ForumValidation.Validate(ValidComment() with { PostId = postId }));
+    }
+
+    [Theory]
     [InlineData(1)]
     [InlineData(-1)]
     public void Vote_AcceptsOnlySpecifiedValues(int value)
     {
-        ForumValidation.Validate(new VotePostInput("post-1", value));
+        ForumValidation.Validate(new VotePostInput(1, value));
     }
 
     [Theory]
@@ -107,14 +116,16 @@ public sealed class ForumValidationTests
     public void Vote_RejectsOtherValues(int value)
     {
         Assert.Throws<ArgumentOutOfRangeException>(
-            () => ForumValidation.Validate(new VotePostInput("post-1", value)));
+            () => ForumValidation.Validate(new VotePostInput(1, value)));
     }
 
-    [Fact]
-    public void Vote_RequiresPostId()
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Vote_RequiresPositivePostId(long postId)
     {
-        Assert.Throws<ArgumentException>(
-            () => ForumValidation.Validate(new VotePostInput(" ", 1)));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => ForumValidation.Validate(new VotePostInput(postId, 1)));
     }
 
     [Theory]
@@ -147,6 +158,15 @@ public sealed class ForumValidationTests
     }
 
     [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void Verification_RequiresPositivePostId(long postId)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => ForumValidation.Validate(ValidVerification() with { PostId = postId }));
+    }
+
+    [Theory]
     [InlineData(-10, 1)]
     [InlineData(0, 1)]
     [InlineData(7, 7)]
@@ -173,20 +193,26 @@ public sealed class ForumValidationTests
     }
 
     [Fact]
+    public void SearchRepo_RequiresNonWhitespaceText()
+    {
+        Assert.Throws<ArgumentException>(() => ForumValidation.ValidateRepo(" "));
+    }
+
+    [Fact]
     public void CommentOffset_CannotBeNegative()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => ForumValidation.ValidateCommentOffset(-1));
     }
 
     private static CreatePostInput ValidPost() =>
-        new("Useful observation", "Inspect A before B.", "main", "abc123", "codex", "gpt", "high");
+        new("agent-forum-mcp", "Useful observation", "Inspect A before B.", "main", "abc123", "codex", "gpt", "high");
 
     private static CreateCommentInput ValidComment() =>
-        new("post-1", "This also applies to C.", "main", "abc123", "codex", "gpt", "high");
+        new(1, "This also applies to C.", "main", "abc123", "codex", "gpt", "high");
 
     private static VerifyPostInput ValidVerification() =>
         new(
-            "post-1",
+            1,
             VerificationOutcome.WorkedAsWritten,
             null,
             "main",

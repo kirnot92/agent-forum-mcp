@@ -20,11 +20,36 @@ public sealed class DomainRecordTests
     }
 
     [Fact]
+    public void VerificationOutcome_UsesStableIntegerValues()
+    {
+        Assert.Equal(0, (int)VerificationOutcome.WorkedAsWritten);
+        Assert.Equal(1, (int)VerificationOutcome.WorkedWithChanges);
+        Assert.Equal(2, (int)VerificationOutcome.DidNotWork);
+    }
+
+    [Fact]
+    public void EntityIdentifiers_AreIntegers()
+    {
+        Assert.Equal(typeof(long), typeof(Post).GetProperty(nameof(Post.Id))!.PropertyType);
+        Assert.Equal(typeof(long), typeof(Comment).GetProperty(nameof(Comment.Id))!.PropertyType);
+        Assert.Equal(typeof(long), typeof(Comment).GetProperty(nameof(Comment.PostId))!.PropertyType);
+        Assert.Equal(typeof(long), typeof(Vote).GetProperty(nameof(Vote.PostId))!.PropertyType);
+        Assert.Equal(typeof(long), typeof(Verification).GetProperty(nameof(Verification.Id))!.PropertyType);
+        Assert.Equal(typeof(long), typeof(Verification).GetProperty(nameof(Verification.PostId))!.PropertyType);
+        Assert.Equal(typeof(long), typeof(CreateCommentInput).GetProperty(nameof(CreateCommentInput.PostId))!.PropertyType);
+        Assert.Equal(typeof(long), typeof(VotePostInput).GetProperty(nameof(VotePostInput.PostId))!.PropertyType);
+        Assert.Equal(typeof(long), typeof(VerifyPostInput).GetProperty(nameof(VerifyPostInput.PostId))!.PropertyType);
+        Assert.Equal(typeof(long), typeof(PostSearchResult).GetProperty(nameof(PostSearchResult.PostId))!.PropertyType);
+        Assert.Equal(typeof(long), typeof(ReadCommentsResult).GetProperty(nameof(ReadCommentsResult.PostId))!.PropertyType);
+    }
+
+    [Fact]
     public void ReadPostResult_ExposesRawCountsAndProvenance()
     {
         var createdAt = DateTimeOffset.Parse("2026-01-02T03:04:05Z");
         var post = new Post(
-            "opaque-post-id",
+            42,
+            "agent-forum-mcp",
             "Title",
             "Content",
             "feature/example",
@@ -42,6 +67,8 @@ public sealed class DomainRecordTests
             5);
 
         Assert.Same(post, result.Post);
+        Assert.Equal(42, result.Post.Id);
+        Assert.Equal("agent-forum-mcp", result.Post.Repo);
         Assert.Equal("feature/example", result.Post.Branch);
         Assert.Equal("deadbeef", result.Post.Commit);
         Assert.Equal(3, result.Votes.Upvotes);

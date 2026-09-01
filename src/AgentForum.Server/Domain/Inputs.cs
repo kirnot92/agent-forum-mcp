@@ -1,6 +1,7 @@
 namespace AgentForum.Server.Domain;
 
 public sealed record CreatePostInput(
+    string Repo,
     string Title,
     string Content,
     string Branch,
@@ -10,7 +11,7 @@ public sealed record CreatePostInput(
     string? Effort = null);
 
 public sealed record CreateCommentInput(
-    string PostId,
+    long PostId,
     string Content,
     string Branch,
     string Commit,
@@ -19,13 +20,13 @@ public sealed record CreateCommentInput(
     string? Effort = null);
 
 public sealed record VotePostInput(
-    string PostId,
+    long PostId,
     int Value,
     string? Agent = null,
     string? Model = null);
 
 public sealed record VerifyPostInput(
-    string PostId,
+    long PostId,
     VerificationOutcome Outcome,
     string? Note,
     string Branch,

@@ -6,6 +6,7 @@ public static class ForumValidation
     {
         ArgumentNullException.ThrowIfNull(input);
 
+        Require(input.Repo, nameof(input.Repo));
         Require(input.Title, nameof(input.Title));
         AtMost(input.Title, ForumLimits.MaxTitleLength, nameof(input.Title));
         Require(input.Content, nameof(input.Content));
@@ -17,7 +18,7 @@ public static class ForumValidation
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        Require(input.PostId, nameof(input.PostId));
+        RequirePositivePostId(input.PostId);
         Require(input.Content, nameof(input.Content));
         AtMost(input.Content, ForumLimits.MaxCommentContentLength, nameof(input.Content));
         RequireRepositoryState(input.Branch, input.Commit);
@@ -27,7 +28,7 @@ public static class ForumValidation
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        Require(input.PostId, nameof(input.PostId));
+        RequirePositivePostId(input.PostId);
         if (input.Value is not 1 and not -1)
         {
             throw new ArgumentOutOfRangeException(
@@ -41,7 +42,7 @@ public static class ForumValidation
     {
         ArgumentNullException.ThrowIfNull(input);
 
-        Require(input.PostId, nameof(input.PostId));
+        RequirePositivePostId(input.PostId);
         if (!Enum.IsDefined(input.Outcome))
         {
             throw new ArgumentOutOfRangeException(
@@ -53,11 +54,14 @@ public static class ForumValidation
         RequireRepositoryState(input.Branch, input.Commit);
     }
 
-    public static void ValidatePostId(string postId)
-        => Require(postId, nameof(postId));
+    public static void ValidatePostId(long postId)
+        => RequirePositivePostId(postId);
 
     public static void ValidateSearchQuery(string query)
         => Require(query, nameof(query));
+
+    public static void ValidateRepo(string repo)
+        => Require(repo, nameof(repo));
 
     public static int ClampSearchLimit(int limit)
         => Math.Clamp(limit, 1, ForumLimits.MaxSearchLimit);
@@ -77,6 +81,17 @@ public static class ForumValidation
     {
         Require(branch, nameof(branch));
         Require(commit, nameof(commit));
+    }
+
+    private static void RequirePositivePostId(long postId)
+    {
+        if (postId <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(postId),
+                postId,
+                "Post ID must be greater than zero.");
+        }
     }
 
     private static void Require(string value, string parameterName)

@@ -1,7 +1,8 @@
 namespace AgentForum.Server.Domain;
 
 public sealed record Post(
-    string Id,
+    long Id,
+    string Repo,
     string Title,
     string Content,
     string Branch,

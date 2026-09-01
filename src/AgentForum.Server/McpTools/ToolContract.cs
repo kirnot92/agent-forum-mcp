@@ -29,6 +29,9 @@ public static class ToolContract
     public const string TitleDescription =
         "A concise title describing the reusable observation or search shortcut. Do not use generic task-summary titles.";
 
+    public const string RepoDescription =
+        "A concise repository or project identifier supplied by the caller. Use the repository being searched or where the observation was made; do not guess.";
+
     public const string ContentDescription =
         "The project-specific experience or observation. Describe what was learned and why it can change a future agent's investigation. Do not write general project documentation.";
 
