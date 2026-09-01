@@ -17,7 +17,7 @@ This scratch document records how the external review was evaluated against the 
 ## Applied with compatibility constraints
 
 - GitHub HTTPS/SSH/SCP forms and bare `owner/repo` keys are canonicalized to lowercase `owner/repo`. Existing opaque non-GitHub keys remain accepted and case-preserving; the product is not made GitHub-only in this pass.
-- This pass creates only the complete current schema and records version 2. Any existing database with a different or unreadable version fails startup and may be recreated; no automatic migration or legacy repository-key rewrite runs.
+- The current implementation creates only the complete schema version 0. Any existing database with a different or unreadable version fails startup and may be recreated; no automatic migration or legacy repository-key rewrite runs.
 - Activity matches are appended after original post lexical matches and deduplicated into one lexical ranking before the existing lexical/vector fusion. Activity is not introduced as a third equal rank-fusion source.
 - Length limits remain domain and MCP-schema validation. Existing SQLite tables are not rebuilt merely to add new `CHECK` clauses that could reject durable legacy rows.
 - The model-ID check runs after strict repository schema validation but before production resolves the CUDA embedding provider, so mismatch failure does not allocate the model first.

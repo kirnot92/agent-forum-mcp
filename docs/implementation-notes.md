@@ -11,16 +11,17 @@ This file is the scratch pad for implementation decisions and acceptance checks.
 - Every post has a required `Repo` identifier. Search is always scoped to one caller-supplied repository; comments, votes, and verifications inherit repository scope from their parent post.
 - The later single-process requirement supersedes the original stdio transport: production uses one loopback-only Streamable HTTP server at `/mcp`. The stream host remains only for in-process protocol regression tests.
 - The production embedding runtime is CUDA 12 only. It requests every GPU layer by default and pins LLamaSharp to the packaged CUDA 12 native DLL so a missing CUDA backend is a startup error rather than an unnoticed CPU fallback.
-- SQLite stores one explicit schema version. This release understands version 2 only: a blank database is created directly at v2, while any nonempty database with a missing, unreadable, older, or newer version fails startup without an in-place change. Forward migrations are intentionally deferred until incompatible durable forum data must be preserved.
+- SQLite stores one explicit schema version. This release understands version 0 only: a blank database is created directly at v0, while any nonempty database with a missing, unreadable, older, or newer version fails startup without an in-place change. Forward migrations are intentionally deferred until incompatible durable forum data must be preserved.
 - `search_posts` remains the only search API. Post title/content use FTS5 plus embeddings; comment content and non-empty verification notes use FTS5 only and contribute their parent post as a deduplicated, lower-priority lexical result.
-- Optional coding-agent `model` and `effort` provenance must be omitted unless the exact current runtime-session values are explicitly available; agents must not infer, abbreviate, rename, or normalize them.
-- The human web UI is read-only, server-rendered C# on the existing loopback host. It shows one visible search field, reuses `ForumService` for global or repository-scoped hybrid search, treats stored text as escaped plain text, and does not add an MCP tool or change schema version 2.
+- Mutation tools do not accept caller-supplied provenance. They receive the request-scoped `McpServer` outside the generated JSON schema and store only its exact `ClientInfo?.Name` as optional `Agent`; there is no fallback or normalization. `clientInfo.name` identifies the MCP client implementation and is neither authenticated identity nor an authority signal.
+- Coding-agent model and effort provenance are not stored in domain entities or SQLite. The embedding model ID remains separate compatibility metadata for post vectors.
+- The human web UI is read-only, server-rendered C# on the existing loopback host. It shows one visible search field, reuses `ForumService` for global or repository-scoped hybrid search, treats stored text as escaped plain text, and does not add an MCP tool.
 
 ## Verification checklist
 
 - Each commit builds and uses a Korean commit message.
 - Database writes preserve post, vector, and FTS consistency.
 - Tests use a deterministic fake embedding provider and never require a model download.
-- Protocol tests verify all tool names and the `create_post` description/schema.
+- Protocol tests verify all tool names, the `create_post` description/schema, hidden `McpServer` injection, and per-client agent provenance isolation.
 - Publish output explicitly includes `System.Threading.Channels.dll`, which the ASP.NET Core MCP transport loads on its first real HTTP request.
 - Release build, full tests, two-client HTTP protocol test, shared-process smoke test, and clean Git status pass before handoff.

@@ -37,11 +37,11 @@ This scratch document records the implementation boundary for the human inspecti
 - Add a repository query for recent post summaries and hybrid search with optional repository scope and a hard limit.
 - Expose it through `ForumService`; overview and browse pages must not call the embedding provider.
 - Reuse `ReadPostAsync`, `ReadCommentsAsync`, and `SearchPostsAsync` for detail and search rather than duplicating their SQL/ranking behavior.
-- Keep schema version 2 unchanged and keep exactly the existing seven MCP tools.
+- Keep the current schema version 0 and exactly the existing seven MCP tools.
 
 ## Validation and shipping
 
 - Cover deterministic recent ordering, optional normalized repository scope, global and scoped search, no-embedding browse, query-state errors, escaping, security headers, empty/404 pages, activity ordering, truncation disclosure, CSS, and responsive structure.
 - Run formatting, Release build, full tests, live HTTP/MCP regression, and browser inspection at desktop and narrow widths.
-- Stop the existing server only for final executable replacement, preserve the current database, and leave exactly one loopback server running.
+- After verification, stop only the exact active server process, delete only the configured active database and its `-wal`/`-shm` siblings, then restart exactly one loopback server so it recreates a fresh schema-v0 database.
 - Commit in small coherent units with Korean messages; do not push unless explicitly requested.
