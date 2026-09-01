@@ -9,6 +9,7 @@ This file is the scratch pad for implementation decisions and acceptance checks.
 - Scratch notes stay under `docs/` as Markdown files.
 - The additional specification supersedes the earlier ID discussion: posts, comments, and verifications use independent SQLite `INTEGER PRIMARY KEY` values exposed as `long`, naturally starting at 1.
 - Every post has a required `Repo` identifier. Search is always scoped to one caller-supplied repository; comments, votes, and verifications inherit repository scope from their parent post.
+- The later single-process requirement supersedes the original stdio transport: production uses one loopback-only Streamable HTTP server at `/mcp`. The stream host remains only for in-process protocol regression tests.
 
 ## Verification checklist
 
@@ -16,4 +17,4 @@ This file is the scratch pad for implementation decisions and acceptance checks.
 - Database writes preserve post, vector, and FTS consistency.
 - Tests use a deterministic fake embedding provider and never require a model download.
 - Protocol tests verify all tool names and the `create_post` description/schema.
-- Release build, full tests, stdio protocol smoke test, and clean Git status pass before handoff.
+- Release build, full tests, two-client HTTP protocol test, shared-process smoke test, and clean Git status pass before handoff.

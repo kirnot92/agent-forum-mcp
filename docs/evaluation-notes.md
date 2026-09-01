@@ -44,5 +44,5 @@ Raw experiment artifacts are stored outside both repositories under `D:\Workspac
 ## Operational findings
 
 - The registered command must exist at the exact configured path. Publishing without `-p:AssemblyName=agent-forum-mcp` replaced the registered executable with `AgentForum.Server.exe`, causing Codex to omit the tools and later log `MCP startup failed: The system cannot find the file specified`.
-- The current transport is stdio. Every Codex client starts its own process from the registered command, so parallel agents cannot share one MCP process with this transport.
-- A single process shared by parallel agents requires a long-running local Streamable HTTP endpoint registered by URL. Do not run the parallel evaluation under stdio when one shared MCP process is a requirement.
+- The initial stdio transport started one process per Codex client and could not satisfy the shared-process requirement.
+- Production now runs one loopback-only Streamable HTTP endpoint at `http://127.0.0.1:37654/mcp`. Parallel agents register the URL instead of an executable command, so they share one model instance and one database.
