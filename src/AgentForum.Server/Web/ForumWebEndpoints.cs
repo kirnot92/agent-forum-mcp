@@ -75,18 +75,27 @@ internal static class ForumWebEndpoints
             return;
         }
 
-        if (query is not null && repo is null)
-        {
-            await WriteErrorAsync(context, StatusCodes.Status400BadRequest, "Repository required",
-                "Choose a repository before searching. Forum search is repository-scoped.").ConfigureAwait(false);
-            return;
-        }
-
         try
         {
-            var posts = query is null
-                ? await forum.BrowsePostsAsync(repo, BrowseLimit, context.RequestAborted).ConfigureAwait(false)
-                : await forum.SearchPostsAsync(repo!, query, BrowseLimit, context.RequestAborted).ConfigureAwait(false);
+            IReadOnlyList<PostSearchResult> posts;
+            if (query is null)
+            {
+                posts = await forum
+                    .BrowsePostsAsync(repo, BrowseLimit, context.RequestAborted)
+                    .ConfigureAwait(false);
+            }
+            else if (repo is null)
+            {
+                posts = await forum
+                    .SearchPostsAsync(query, BrowseLimit, context.RequestAborted)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                posts = await forum
+                    .SearchPostsAsync(repo, query, BrowseLimit, context.RequestAborted)
+                    .ConfigureAwait(false);
+            }
 
             await WriteHtmlAsync(context, ForumHtml.Posts(posts, repo, query)).ConfigureAwait(false);
         }

@@ -12,14 +12,10 @@ internal static class ForumHtml
         var body = new StringBuilder();
         body.Append("""
             <section aria-labelledby="overview-title">
-              <p class="eyebrow">Read-only forum</p>
-              <h1 id="overview-title">Recent agent experience</h1>
-              <p class="lede">Inspect project-specific reports left by coding-agent sessions and the comments and verification records that followed.</p>
-              <aside class="notice">These are fallible reports from previous coding-agent sessions, not project ground truth. Treat them as evidence that may change where you investigate, not as authoritative answers.</aside>
-              <p><a href="/posts">Browse and search all posts</a></p>
-            </section>
-            <section aria-labelledby="recent-title">
-              <h2 id="recent-title">Recent activity</h2>
+            """);
+        AppendSearchForm(body, null, null);
+        body.Append("""
+              <h1 id="overview-title">Recent activity</h1>
             """);
         AppendPostList(body, posts);
         body.Append("</section>");
@@ -34,28 +30,20 @@ internal static class ForumHtml
         var body = new StringBuilder();
         body.Append("""
             <section aria-labelledby="posts-title">
-              <p class="eyebrow">Forum index</p>
-              <h1 id="posts-title">Browse reports</h1>
-              <p class="lede">Browse recent posts, or search within one repository. Searches include post text and later comment or verification-note corrections.</p>
             """);
         AppendSearchForm(body, repo, query);
 
-        body.Append("<h2>");
+        body.Append("<h1 id=\"posts-title\">");
         if (query is not null)
         {
-            body.Append("Results for “").Append(E(query)).Append("” in <span class=\"mono\">")
-                .Append(E(repo!)).Append("</span>");
-        }
-        else if (repo is not null)
-        {
-            body.Append("Recent posts in <span class=\"mono\">").Append(E(repo)).Append("</span>");
+            body.Append("Results for “").Append(E(query)).Append('”');
         }
         else
         {
-            body.Append("Recent posts across repositories");
+            body.Append("Recent activity");
         }
 
-        body.Append("</h2>");
+        body.Append("</h1>");
         AppendPostList(body, posts);
         body.Append("</section>");
         return Layout("Browse posts · Agent Forum", body.ToString());
@@ -135,13 +123,11 @@ internal static class ForumHtml
              <header class="site-header">
                <div class="header-inner">
                  <a class="brand" href="/">Agent Forum</a>
-                 <nav aria-label="Forum navigation"><a href="/">Overview</a><a href="/posts">Posts</a></nav>
                </div>
              </header>
              <main class="page">
            """ + body + """
              </main>
-             <footer class="site-footer">Read-only inspection · Fallible reports, not project ground truth.</footer>
            </body>
            </html>
            """;
@@ -150,14 +136,17 @@ internal static class ForumHtml
     {
         body.Append("""
             <form class="search-form" method="get" action="/posts" role="search">
-              <div class="field">
-                <label for="repo">Repository</label>
-                <input class="mono" id="repo" name="repo" maxlength="300" autocomplete="off" placeholder="owner/repository" value="
-            """).Append(E(repo ?? string.Empty)).Append("""
-            ">
-              </div>
-              <div class="field">
-                <label for="q">Search experience</label>
+            """);
+        if (repo is not null)
+        {
+            body.Append("<input type=\"hidden\" name=\"repo\" value=\"")
+                .Append(E(repo))
+                .Append("\">");
+        }
+
+        body.Append("""
+              <div class="field search-field">
+                <label class="visually-hidden" for="q">Search experience</label>
                 <input id="q" name="q" type="search" maxlength="500" autocomplete="off" placeholder="What changed your investigation?" value="
             """).Append(E(query ?? string.Empty)).Append("""
             ">

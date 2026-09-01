@@ -25,12 +25,10 @@ internal static class ForumStylesheet
         }
 
         .site-header { border-bottom: 1px solid var(--line); background: rgba(255,255,255,.88); }
-        .header-inner, .page, .site-footer { width: min(100% - 2rem, 760px); margin-inline: auto; }
-        .header-inner { min-height: 3.5rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+        .header-inner, .page { width: min(100% - 2rem, 760px); margin-inline: auto; }
+        .header-inner { min-height: 3.5rem; display: flex; align-items: center; }
         .brand { color: var(--text); font-weight: 650; text-decoration: none; letter-spacing: -.01em; }
-        nav { display: flex; gap: 1rem; font-size: .9rem; }
         .page { padding-block: 3.5rem 5rem; }
-        .site-footer { padding-block: 1.5rem 2.5rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .82rem; }
 
         h1, h2, h3 { line-height: 1.25; letter-spacing: -.02em; }
         h1 { margin: 0 0 1rem; font-size: clamp(1.85rem, 5vw, 2.55rem); font-weight: 650; }
@@ -43,13 +41,14 @@ internal static class ForumStylesheet
         .mono, code, time { font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace; font-size: .92em; }
         .prose { white-space: pre-wrap; overflow-wrap: anywhere; }
         .muted { color: var(--muted); }
+        .visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
         .notice, .error-panel { margin: 1.5rem 0 2rem; padding: 1rem 1.1rem; border: 1px solid var(--line); border-radius: .75rem; background: #fafaf8; }
         .notice { color: #4f4f4b; }
         .error-panel h1 { font-size: 1.55rem; }
         .error-code { color: var(--muted); font-family: ui-monospace, monospace; }
 
-        .search-form { margin: 2rem 0; display: grid; grid-template-columns: 1fr 1.4fr auto; gap: .8rem; align-items: end; }
+        .search-form { margin: 0 0 2.5rem; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .8rem; align-items: end; }
         .field { display: grid; gap: .35rem; }
         label { color: #555550; font-size: .8rem; font-weight: 600; }
         input { width: 100%; min-height: 2.55rem; padding: .55rem .7rem; border: 1px solid #cfcfc9; border-radius: .55rem; background: var(--surface); color: var(--text); font: inherit; }
@@ -83,7 +82,7 @@ internal static class ForumStylesheet
         .empty { padding: 2rem 0; border-block: 1px solid var(--line); color: var(--muted); }
 
         @media (max-width: 640px) {
-          .header-inner, .page, .site-footer { width: min(100% - 1.25rem, 760px); }
+          .header-inner, .page { width: min(100% - 1.25rem, 760px); }
           .page { padding-block: 2.25rem 3.5rem; }
           .search-form { grid-template-columns: 1fr; }
           .context-grid { grid-template-columns: 1fr; }

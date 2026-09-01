@@ -26,9 +26,17 @@ public sealed class ForumWebEndpointsTests
         Assert.Equal("text/html", response.Content.Headers.ContentType!.MediaType);
         Assert.Equal("utf-8", response.Content.Headers.ContentType.CharSet);
         AssertSecurityHeaders(response);
-        Assert.Contains("Recent agent experience", html);
-        Assert.Contains("fallible reports", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("<form class=\"search-form\"", html);
+        Assert.Contains("name=\"q\"", html);
+        Assert.Contains("Recent activity", html);
         Assert.Contains("Recent report", html);
+        Assert.DoesNotContain("Read-only forum", html);
+        Assert.DoesNotContain("Recent agent experience", html);
+        Assert.DoesNotContain("Browse and search all posts", html);
+        Assert.DoesNotContain("fallible reports", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("<nav", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("<footer", html, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("name=\"repo\"", html);
         Assert.Equal(embeddingCalls, fixture.Embeddings.CallCount);
 
         using var cssResponse = await fixture.Client.GetAsync("/forum.css");
@@ -46,7 +54,7 @@ public sealed class ForumWebEndpointsTests
     }
 
     [Fact]
-    public async Task Posts_SupportsGlobalAndRepositoryBrowseWithoutEmbeddingAndScopedSearchWithEmbedding()
+    public async Task Posts_SupportsGlobalAndRepositoryBrowseAndSearch()
     {
         await using var fixture = await WebFixture.StartAsync();
         await fixture.CreatePostAsync("acme/alpha", "Alpha report", "Needle appears in this report.");
@@ -56,33 +64,48 @@ public sealed class ForumWebEndpointsTests
         var allHtml = await fixture.Client.GetStringAsync("/posts");
         Assert.Contains("Alpha report", allHtml);
         Assert.Contains("Beta report", allHtml);
+        Assert.Contains("Recent activity", allHtml);
+        Assert.DoesNotContain("name=\"repo\"", allHtml);
         Assert.Equal(embeddingCalls, fixture.Embeddings.CallCount);
 
         var repoHtml = await fixture.Client.GetStringAsync("/posts?repo=acme%2Falpha");
         Assert.Contains("Alpha report", repoHtml);
         Assert.DoesNotContain("Beta report", repoHtml);
+        Assert.Contains("type=\"hidden\" name=\"repo\" value=\"acme/alpha\"", repoHtml);
+        Assert.DoesNotContain("id=\"repo\"", repoHtml);
+        Assert.DoesNotContain("owner/repository", repoHtml);
         Assert.Equal(embeddingCalls, fixture.Embeddings.CallCount);
 
-        var searchHtml = await fixture.Client.GetStringAsync("/posts?repo=acme%2Falpha&q=Needle");
-        Assert.Contains("Alpha report", searchHtml);
+        var globalSearchHtml = await fixture.Client.GetStringAsync("/posts?q=Needle");
+        Assert.Contains("Results for “Needle”", globalSearchHtml);
+        Assert.Contains("Alpha report", globalSearchHtml);
         Assert.Equal(embeddingCalls + 1, fixture.Embeddings.CallCount);
+
+        var searchHtml = await fixture.Client.GetStringAsync("/posts?repo=acme%2Falpha&q=Needle");
+        Assert.Contains("Results for “Needle”", searchHtml);
+        Assert.Contains("Alpha report", searchHtml);
+        Assert.DoesNotContain("Beta report", searchHtml);
+        Assert.Contains("type=\"hidden\" name=\"repo\" value=\"acme/alpha\"", searchHtml);
+        Assert.Equal(embeddingCalls + 2, fixture.Embeddings.CallCount);
     }
 
     [Fact]
-    public async Task Posts_RejectsUnscopedAndOversizedQueriesWithRestrainedPages()
+    public async Task Posts_TreatsWhitespaceQueryAsRecentAndRejectsOversizedQuery()
     {
         await using var fixture = await WebFixture.StartAsync();
+        await fixture.CreatePostAsync("acme/alpha", "Alpha report", "Recent context.");
+        var embeddingCalls = fixture.Embeddings.CallCount;
 
-        using var unscoped = await fixture.Client.GetAsync("/posts?q=needle");
-        var unscopedHtml = await unscoped.Content.ReadAsStringAsync();
-        Assert.Equal(HttpStatusCode.BadRequest, unscoped.StatusCode);
-        Assert.Contains("Repository required", unscopedHtml);
-        Assert.DoesNotContain("Exception", unscopedHtml, StringComparison.OrdinalIgnoreCase);
-        AssertSecurityHeaders(unscoped);
+        using var blank = await fixture.Client.GetAsync("/posts?q=%20%20%20");
+        var blankHtml = await blank.Content.ReadAsStringAsync();
+        Assert.Equal(HttpStatusCode.OK, blank.StatusCode);
+        Assert.Contains("Recent activity", blankHtml);
+        Assert.Contains("Alpha report", blankHtml);
+        Assert.DoesNotContain("Results for", blankHtml);
+        Assert.Equal(embeddingCalls, fixture.Embeddings.CallCount);
 
         var oversizedQuery = new string('q', 501);
-        using var oversized = await fixture.Client.GetAsync(
-            "/posts?repo=acme%2Falpha&q=" + oversizedQuery);
+        using var oversized = await fixture.Client.GetAsync("/posts?q=" + oversizedQuery);
         var oversizedHtml = await oversized.Content.ReadAsStringAsync();
         Assert.Equal(HttpStatusCode.BadRequest, oversized.StatusCode);
         Assert.Contains("at most 500 characters", oversizedHtml);
@@ -166,11 +189,13 @@ public sealed class ForumWebEndpointsTests
         Assert.Equal(HttpStatusCode.OK, reflected.StatusCode);
         Assert.DoesNotContain("<input autofocus", reflectedHtml, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("&quot;&gt;&lt;input autofocus onfocus=alert(1)&gt;", reflectedHtml);
+        Assert.Contains("type=\"hidden\" name=\"repo\" value=\"&quot;&gt;&lt;input autofocus onfocus=alert(1)&gt;\"", reflectedHtml);
+        Assert.DoesNotContain("id=\"repo\"", reflectedHtml);
 
         await fixture.CreatePostAsync("acme/reflected", "Safe title", "needle script alert");
         const string maliciousQuery = "needle\"><script>alert(5)</script>";
         using var queryResponse = await fixture.Client.GetAsync(
-            "/posts?repo=acme%2Freflected&q=" + Uri.EscapeDataString(maliciousQuery));
+            "/posts?q=" + Uri.EscapeDataString(maliciousQuery));
         var queryHtml = await queryResponse.Content.ReadAsStringAsync();
         Assert.Equal(HttpStatusCode.OK, queryResponse.StatusCode);
         Assert.DoesNotContain("<script>alert(5)</script>", queryHtml, StringComparison.OrdinalIgnoreCase);
