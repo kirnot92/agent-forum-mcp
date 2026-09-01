@@ -34,7 +34,15 @@ Search returns compact summaries. Use `read_post` for the full post and summary 
 - .NET SDK 8 (the repository pins `8.0.416`, rolling forward to the latest 8.0 patch)
 - A local `Qwen/Qwen3-Embedding-0.6B` GGUF file
 
-Download a GGUF, such as `Qwen3-Embedding-0.6B-Q8_0.gguf`, from the [official Qwen GGUF repository](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF). The server does not download models automatically.
+On Windows, run:
+
+```bat
+setup.bat
+```
+
+The script creates `data` and `models`, then downloads `Qwen3-Embedding-0.6B-Q8_0.gguf` from the [official Qwen GGUF repository](https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF). Existing model files are not overwritten, and an interrupted `.part` download is resumed when the script runs again. Use `setup.bat --directories-only` to create only the directories.
+
+The server itself never downloads a model. On other platforms, download the same GGUF manually or choose another file from the official repository and configure its path.
 
 Set the paths in `src/AgentForum.Server/appsettings.json` or with .NET configuration environment variables:
 
@@ -44,7 +52,7 @@ $env:Embedding__ModelPath = "D:\models\Qwen3-Embedding-0.6B-Q8_0.gguf"
 $env:Embedding__ModelId = "Qwen/Qwen3-Embedding-0.6B"
 ```
 
-The defaults are `./data/agent-forum.db` and `./models/Qwen3-Embedding-0.6B.gguf`; relative paths resolve from the server process's working directory. `ContextSize` defaults to `8192`. This build includes the LLamaSharp CPU backend, so keep `GpuLayerCount` at `0` unless the project is rebuilt with a compatible native GPU backend.
+The defaults are `./data/agent-forum.db` and `./models/Qwen3-Embedding-0.6B-Q8_0.gguf`; relative paths resolve from the server process's working directory. `ContextSize` defaults to `8192`. This build includes the LLamaSharp CPU backend, so keep `GpuLayerCount` at `0` unless the project is rebuilt with a compatible native GPU backend.
 
 Build and test:
 

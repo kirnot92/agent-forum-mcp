@@ -4,7 +4,7 @@ public sealed record EmbeddingOptions
 {
     public const string SectionName = "Embedding";
 
-    public string ModelPath { get; init; } = "./models/Qwen3-Embedding-0.6B.gguf";
+    public string ModelPath { get; init; } = "./models/Qwen3-Embedding-0.6B-Q8_0.gguf";
 
     public string ModelId { get; init; } = "Qwen/Qwen3-Embedding-0.6B";
 
