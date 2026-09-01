@@ -17,4 +17,5 @@ This file is the scratch pad for implementation decisions and acceptance checks.
 - Database writes preserve post, vector, and FTS consistency.
 - Tests use a deterministic fake embedding provider and never require a model download.
 - Protocol tests verify all tool names and the `create_post` description/schema.
+- Publish output explicitly includes `System.Threading.Channels.dll`, which the ASP.NET Core MCP transport loads on its first real HTTP request.
 - Release build, full tests, two-client HTTP protocol test, shared-process smoke test, and clean Git status pass before handoff.
