@@ -14,7 +14,9 @@ public sealed class LlamaSharpQwenEmbeddingProvider : IEmbeddingProvider, IDispo
 
     private readonly ILlamaEmbeddingSession _session;
     private readonly SemaphoreSlim _embeddingGate = new(1, 1);
-    private int _disposeRequested;
+    private readonly object _lifetimeLock = new();
+    private int _activeEmbeddingCalls;
+    private bool _disposed;
 
     public LlamaSharpQwenEmbeddingProvider(EmbeddingOptions options)
         : this(CreateSession(options))
@@ -31,12 +33,13 @@ public sealed class LlamaSharpQwenEmbeddingProvider : IEmbeddingProvider, IDispo
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(text);
-        ThrowIfDisposed();
+        EnterEmbeddingCall();
 
-        await _embeddingGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var enteredGate = false;
         try
         {
-            ThrowIfDisposed();
+            await _embeddingGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            enteredGate = true;
 
             var embeddings = await _session
                 .GetEmbeddingsAsync(text, cancellationToken)
@@ -46,46 +49,62 @@ public sealed class LlamaSharpQwenEmbeddingProvider : IEmbeddingProvider, IDispo
         }
         finally
         {
-            _embeddingGate.Release();
+            if (enteredGate)
+            {
+                _embeddingGate.Release();
+            }
+
+            ExitEmbeddingCall();
         }
     }
 
     public void Dispose()
     {
-        if (Interlocked.Exchange(ref _disposeRequested, 1) != 0)
+        lock (_lifetimeLock)
         {
-            return;
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            while (_activeEmbeddingCalls != 0)
+            {
+                Monitor.Wait(_lifetimeLock);
+            }
         }
 
-        // Wait for the native context currently using the shared weights. Calls
-        // already queued on the semaphore will observe the disposed state before
-        // entering the session.
-        _embeddingGate.Wait();
         try
         {
             _session.Dispose();
         }
         finally
         {
-            _embeddingGate.Release();
+            _embeddingGate.Dispose();
         }
 
         GC.SuppressFinalize(this);
     }
 
-    internal static string ValidateModelPath(string? configuredPath)
+    internal static string ValidateModelPath(
+        string? configuredPath,
+        string? modelId = null)
     {
+        var modelDescription = string.IsNullOrWhiteSpace(modelId)
+            ? "the Qwen3 embedding model"
+            : $"embedding model '{modelId}'";
+
         if (string.IsNullOrWhiteSpace(configuredPath))
         {
             throw new InvalidOperationException(
-                $"{ModelPathConfigurationKey} must be configured with a Qwen3 embedding GGUF file path.");
+                $"{ModelPathConfigurationKey} must be configured with a GGUF file path for {modelDescription}.");
         }
 
         var fullPath = Path.GetFullPath(configuredPath);
         if (!File.Exists(fullPath))
         {
             throw new FileNotFoundException(
-                $"The Qwen3 embedding model configured by {ModelPathConfigurationKey} was not found: '{fullPath}'.",
+                $"The GGUF file for {modelDescription}, configured by {ModelPathConfigurationKey}, was not found: '{fullPath}'.",
                 fullPath);
         }
 
@@ -115,7 +134,7 @@ public sealed class LlamaSharpQwenEmbeddingProvider : IEmbeddingProvider, IDispo
     {
         ArgumentNullException.ThrowIfNull(options);
 
-        var modelPath = ValidateModelPath(options.ModelPath);
+        var modelPath = ValidateModelPath(options.ModelPath, options.ModelId);
         var modelParameters = new ModelParams(modelPath)
         {
             ContextSize = options.ContextSize,
@@ -140,10 +159,26 @@ public sealed class LlamaSharpQwenEmbeddingProvider : IEmbeddingProvider, IDispo
         }
     }
 
-    private void ThrowIfDisposed() =>
-        ObjectDisposedException.ThrowIf(
-            Volatile.Read(ref _disposeRequested) != 0,
-            this);
+    private void EnterEmbeddingCall()
+    {
+        lock (_lifetimeLock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            _activeEmbeddingCalls++;
+        }
+    }
+
+    private void ExitEmbeddingCall()
+    {
+        lock (_lifetimeLock)
+        {
+            _activeEmbeddingCalls--;
+            if (_activeEmbeddingCalls == 0)
+            {
+                Monitor.PulseAll(_lifetimeLock);
+            }
+        }
+    }
 
     private sealed class LlamaEmbeddingSession(
         LLamaWeights weights,
