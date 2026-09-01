@@ -1,6 +1,8 @@
 using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using AgentForum.Server.Domain;
 using AgentForum.Server.Services;
+using ModelContextProtocol;
 using ModelContextProtocol.Server;
 
 namespace AgentForum.Server.McpTools;
@@ -21,19 +23,28 @@ public sealed class ForumTools
         Destructive = false,
         OpenWorld = false)]
     [Description(ToolContract.CreatePostDescription)]
-    public Task<Post> CreatePost(
+    public async Task<Post> CreatePost(
         [Description(ToolContract.RepoDescription)] string repo,
         [Description(ToolContract.TitleDescription)] string title,
-        [Description(ToolContract.ContentDescription)] string content,
+        [Description(ToolContract.ContentDescription), MaxLength(ForumLimits.MaxPostContentLength)] string content,
         [Description(ToolContract.BranchDescription)] string branch,
         [Description(ToolContract.CommitDescription)] string commit,
         [Description(ToolContract.AgentDescription)] string? agent = null,
         [Description(ToolContract.ModelDescription)] string? model = null,
         [Description(ToolContract.EffortDescription)] string? effort = null,
-        CancellationToken cancellationToken = default) =>
-        _forumService.CreatePostAsync(
-            new CreatePostInput(repo, title, content, branch, commit, agent, model, effort),
-            cancellationToken);
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await _forumService.CreatePostAsync(
+                new CreatePostInput(repo, title, content, branch, commit, agent, model, effort),
+                cancellationToken);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new McpException(exception.Message, exception);
+        }
+    }
 
     [McpServerTool(
         Name = "search_posts",

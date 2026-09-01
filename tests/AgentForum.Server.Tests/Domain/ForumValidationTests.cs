@@ -50,7 +50,10 @@ public sealed class ForumValidationTests
     {
         var input = ValidPost() with { Content = new string('c', ForumLimits.MaxPostContentLength + 1) };
 
-        Assert.Throws<ArgumentException>(() => ForumValidation.Validate(input));
+        var exception = Assert.Throws<ArgumentException>(() => ForumValidation.Validate(input));
+
+        Assert.Contains("Content cannot exceed 3000 characters", exception.Message);
+        Assert.Contains("received 3001 characters", exception.Message);
     }
 
     [Fact]

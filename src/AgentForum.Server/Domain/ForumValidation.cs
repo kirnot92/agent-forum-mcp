@@ -107,7 +107,7 @@ public static class ForumValidation
         if (value.Length > maximumLength)
         {
             throw new ArgumentException(
-                $"Value cannot exceed {maximumLength} characters.",
+                $"{parameterName} cannot exceed {maximumLength} characters; received {value.Length} characters.",
                 parameterName);
         }
     }

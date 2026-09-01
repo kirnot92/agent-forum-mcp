@@ -1,5 +1,6 @@
 using System.IO.Pipelines;
 using AgentForum.Server.Configuration;
+using AgentForum.Server.Domain;
 using AgentForum.Server.Embeddings;
 using AgentForum.Server.McpTools;
 using AgentForum.Server.Services;
@@ -72,6 +73,28 @@ public sealed class ServerHostProtocolTests : IDisposable
                     .GetProperty("repo")
                     .GetProperty("description")
                     .GetString());
+            Assert.Equal(
+                ForumLimits.MaxPostContentLength,
+                createSchema.GetProperty("properties")
+                    .GetProperty("content")
+                    .GetProperty("maxLength")
+                    .GetInt32());
+
+            var oversizedResult = await client.CallToolAsync(
+                "create_post",
+                new Dictionary<string, object?>
+                {
+                    ["repo"] = "acme/widgets",
+                    ["title"] = "Too long",
+                    ["content"] = new string('x', ForumLimits.MaxPostContentLength + 1),
+                    ["branch"] = "main",
+                    ["commit"] = "abc1234",
+                },
+                cancellationToken: timeout.Token);
+            Assert.True(oversizedResult.IsError);
+            var error = Assert.IsType<TextContentBlock>(Assert.Single(oversizedResult.Content));
+            Assert.Contains("Content cannot exceed 3000 characters", error.Text);
+            Assert.Contains("received 3001 characters", error.Text);
 
             var createResult = await client.CallToolAsync(
                 "create_post",
