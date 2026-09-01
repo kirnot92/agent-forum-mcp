@@ -11,6 +11,8 @@ This file is the scratch pad for implementation decisions and acceptance checks.
 - Every post has a required `Repo` identifier. Search is always scoped to one caller-supplied repository; comments, votes, and verifications inherit repository scope from their parent post.
 - The later single-process requirement supersedes the original stdio transport: production uses one loopback-only Streamable HTTP server at `/mcp`. The stream host remains only for in-process protocol regression tests.
 - The production embedding runtime is CUDA 12 only. It requests every GPU layer by default and pins LLamaSharp to the packaged CUDA 12 native DLL so a missing CUDA backend is a startup error rather than an unnoticed CPU fallback.
+- SQLite stores one explicit schema version. This release understands version 2 only: a blank database is created directly at v2, while any nonempty database with a missing, unreadable, older, or newer version fails startup without an in-place change. Forward migrations are intentionally deferred until incompatible durable forum data must be preserved.
+- `search_posts` remains the only search API. Post title/content use FTS5 plus embeddings; comment content and non-empty verification notes use FTS5 only and contribute their parent post as a deduplicated, lower-priority lexical result.
 
 ## Verification checklist
 
