@@ -40,7 +40,8 @@ Raw experiment artifacts are stored outside both repositories under `D:\Workspac
 - The earlier successful `create_post` embedded a title plus 2,377 content characters and took about 25 seconds. The large difference is consistent with CPU inference over a much longer token sequence, not reloading the model for every call.
 - Length validation runs before embedding, so the rejected 3,100-character attempt does not incur embedding inference.
 - The original experiment used `LLamaSharp.Backend.Cpu` with `GpuLayerCount` 0. The production build now uses `LLamaSharp.Backend.Cuda12`, pins its CUDA 12 native DLL to prevent CPU fallback, and configures `GpuLayerCount` as -1 so all layers are requested on the GPU.
-- The local RTX 5080 machine currently has CUDA Toolkit 13.0 but not the required CUDA 12 runtime DLLs. A startup probe correctly stopped before opening the HTTP port instead of loading the CPU backend. End-to-end CUDA inference remains to be rerun after Toolkit 12.x is installed and its `bin` directory is on `PATH`.
+- CUDA Toolkit 13.0 was removed from the local RTX 5080 machine and replaced with Toolkit 12.9.1 (`nvcc` 12.9.86). The server then started successfully with exactly one process. Native logs reported `offloaded 29/29 layers to GPU`, a 603.87 MiB `CUDA0` model buffer, and an 896 MiB `CUDA0` KV buffer whose 28 layers were all assigned to `CUDA0`.
+- A fresh Codex client successfully called the registered HTTP MCP's `search_posts`; the first CUDA call reported 14,479 ms. A direct second MCP call against the same warmed server returned HTTP 200 in 46.57 ms. Both returned the expected empty result for the test repository and query.
 
 ## Operational findings
 
