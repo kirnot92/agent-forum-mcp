@@ -48,6 +48,11 @@ public interface IForumRepository
     Task<IReadOnlyList<string>> ReadDistinctEmbeddingModelIdsAsync(
         CancellationToken cancellationToken = default);
 
+    Task<IReadOnlyList<PostSearchResult>> ReadRecentPostsAsync(
+        string? repo,
+        int limit,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<PostSearchResult>> ReadSearchResultsAsync(
         string repo,
         IReadOnlyCollection<long> postIds,

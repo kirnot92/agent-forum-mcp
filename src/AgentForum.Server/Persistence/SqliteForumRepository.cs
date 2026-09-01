@@ -579,6 +579,48 @@ public sealed partial class SqliteForumRepository : IForumRepository
         return modelIds;
     }
 
+    public async Task<IReadOnlyList<PostSearchResult>> ReadRecentPostsAsync(
+        string? repo,
+        int limit,
+        CancellationToken cancellationToken = default)
+    {
+        if (limit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), limit, "The recent post limit must be positive.");
+        }
+
+        var normalizedRepo = repo is null ? null : RepositoryKey.Normalize(repo);
+        await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
+        await using var command = connection.CreateCommand();
+        command.CommandText = normalizedRepo is null
+            ? $"""
+                {CompactPostProjectionSql}
+                ORDER BY p.last_activity_at DESC, p.id DESC
+                LIMIT $limit;
+                """
+            : $"""
+                {CompactPostProjectionSql}
+                WHERE p.repo = $repo
+                ORDER BY p.last_activity_at DESC, p.id DESC
+                LIMIT $limit;
+                """;
+        if (normalizedRepo is not null)
+        {
+            command.Parameters.AddWithValue("$repo", normalizedRepo);
+        }
+
+        command.Parameters.AddWithValue("$limit", limit);
+
+        var results = new List<PostSearchResult>();
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            results.Add(ReadSearchResult(reader));
+        }
+
+        return results;
+    }
+
     public async Task<IReadOnlyList<PostSearchResult>> ReadSearchResultsAsync(
         string repo,
         IReadOnlyCollection<long> postIds,
@@ -614,16 +656,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
             }
 
             command.CommandText = $"""
-                SELECT
-                    p.id, p.repo, p.title, p.content, p.branch, p.commit_hash,
-                    p.created_at, p.last_activity_at,
-                    COALESCE((SELECT SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END) FROM votes WHERE post_id = p.id), 0),
-                    COALESCE((SELECT SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END) FROM votes WHERE post_id = p.id), 0),
-                    COALESCE((SELECT SUM(CASE WHEN outcome = 0 THEN 1 ELSE 0 END) FROM verifications WHERE post_id = p.id), 0),
-                    COALESCE((SELECT SUM(CASE WHEN outcome = 1 THEN 1 ELSE 0 END) FROM verifications WHERE post_id = p.id), 0),
-                    COALESCE((SELECT SUM(CASE WHEN outcome = 2 THEN 1 ELSE 0 END) FROM verifications WHERE post_id = p.id), 0),
-                    (SELECT COUNT(*) FROM comments WHERE post_id = p.id)
-                FROM posts AS p
+                {CompactPostProjectionSql}
                 WHERE p.repo = $repo AND p.id IN ({string.Join(", ", parameterNames)});
                 """;
             command.Parameters.AddWithValue("$repo", normalizedRepo);
@@ -1004,6 +1037,19 @@ public sealed partial class SqliteForumRepository : IForumRepository
             (SELECT COUNT(*) FROM verifications WHERE post_id = p.id)
         FROM posts AS p
         WHERE p.id = $postId;
+        """;
+
+    private const string CompactPostProjectionSql = """
+        SELECT
+            p.id, p.repo, p.title, p.content, p.branch, p.commit_hash,
+            p.created_at, p.last_activity_at,
+            COALESCE((SELECT SUM(CASE WHEN value = 1 THEN 1 ELSE 0 END) FROM votes WHERE post_id = p.id), 0),
+            COALESCE((SELECT SUM(CASE WHEN value = -1 THEN 1 ELSE 0 END) FROM votes WHERE post_id = p.id), 0),
+            COALESCE((SELECT SUM(CASE WHEN outcome = 0 THEN 1 ELSE 0 END) FROM verifications WHERE post_id = p.id), 0),
+            COALESCE((SELECT SUM(CASE WHEN outcome = 1 THEN 1 ELSE 0 END) FROM verifications WHERE post_id = p.id), 0),
+            COALESCE((SELECT SUM(CASE WHEN outcome = 2 THEN 1 ELSE 0 END) FROM verifications WHERE post_id = p.id), 0),
+            (SELECT COUNT(*) FROM comments WHERE post_id = p.id)
+        FROM posts AS p
         """;
 
     private sealed record SchemaObject(string Type, string Name);

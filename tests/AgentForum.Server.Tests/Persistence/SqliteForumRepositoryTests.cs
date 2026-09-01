@@ -485,6 +485,68 @@ public sealed class SqliteForumRepositoryTests : IDisposable
     }
 
     [Fact]
+    public async Task ReadRecentPosts_global_browse_orders_by_activity_then_descending_id()
+    {
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 3, 4, 5, 6, 7, TimeSpan.Zero));
+        var repository = CreateRepository(clock);
+        await repository.InitializeAsync();
+        var first = await repository.CreatePostAsync(PostInput("owner/one", "first", "body"), [1f], "model-a");
+        var second = await repository.CreatePostAsync(PostInput("owner/two", "second", "body"), [1f], "model-a");
+        var third = await repository.CreatePostAsync(PostInput("owner/three", "third", "body"), [1f], "model-a");
+
+        clock.UtcNow = clock.UtcNow.AddMinutes(1);
+        await repository.CreateCommentAsync(CommentInput(first.Id, "new activity"));
+
+        var results = await repository.ReadRecentPostsAsync(null, 10);
+
+        Assert.Equal([first.Id, third.Id, second.Id], results.Select(result => result.PostId));
+        Assert.Equal(["owner/one", "owner/three", "owner/two"], results.Select(result => result.Repo));
+    }
+
+    [Fact]
+    public async Task ReadRecentPosts_normalizes_repository_scope()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+        var expected = await repository.CreatePostAsync(
+            PostInput("owner/repo", "expected", "body"),
+            [1f],
+            "model-a");
+        await repository.CreatePostAsync(PostInput("owner/other", "other", "body"), [1f], "model-a");
+
+        var result = Assert.Single(await repository.ReadRecentPostsAsync(
+            " git@github.com:OWNER/REPO.git ",
+            10));
+
+        Assert.Equal(expected.Id, result.PostId);
+        Assert.Equal("owner/repo", result.Repo);
+    }
+
+    [Fact]
+    public async Task ReadRecentPosts_honors_hard_limit_and_returns_compact_summaries()
+    {
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 3, 4, 5, 6, 7, TimeSpan.Zero));
+        var repository = CreateRepository(clock);
+        await repository.InitializeAsync();
+        var longContent = new string('x', 400);
+        var post = await repository.CreatePostAsync(PostInput("repo-a", "summarized", longContent), [1f], "model-a");
+        await repository.CreatePostAsync(PostInput("repo-a", "older", "body"), [1f], "model-a");
+        clock.UtcNow = clock.UtcNow.AddMinutes(1);
+        await repository.CreateCommentAsync(CommentInput(post.Id, "caveat"));
+        await repository.AddVoteAsync(new VotePostInput(post.Id, 1));
+        await repository.AddVerificationAsync(VerificationInput(post.Id, VerificationOutcome.DidNotWork));
+
+        var compact = Assert.Single(await repository.ReadRecentPostsAsync(null, 1));
+
+        Assert.Equal(post.Id, compact.PostId);
+        Assert.Equal(1, compact.CommentCount);
+        Assert.Equal(1, compact.Upvotes);
+        Assert.Equal(1, compact.DidNotWorkCount);
+        Assert.True(compact.Snippet.Length < longContent.Length);
+        Assert.EndsWith("…", compact.Snippet);
+    }
+
+    [Fact]
     public async Task Compact_hydration_preserves_requested_order_counts_and_duplicates_without_full_threads()
     {
         var repository = CreateRepository();

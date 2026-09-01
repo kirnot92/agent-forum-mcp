@@ -175,6 +175,60 @@ public sealed class ForumServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task BrowsePosts_normalizes_repository_scope_without_embedding()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+        var expected = await repository.CreatePostAsync(
+            PostInput("owner/repo", "expected", "body"),
+            [1f],
+            ModelId);
+        await repository.CreatePostAsync(PostInput("owner/other", "other", "body"), [1f], ModelId);
+        var provider = new RecordingEmbeddingProvider(_ => throw new InvalidOperationException("must not embed"));
+        var service = CreateService(repository, provider);
+
+        var result = Assert.Single(await service.BrowsePostsAsync("https://github.com/OWNER/REPO.git"));
+
+        Assert.Equal(expected.Id, result.PostId);
+        Assert.Equal("owner/repo", result.Repo);
+        Assert.Empty(provider.Texts);
+    }
+
+    [Fact]
+    public async Task BrowsePosts_null_repo_reads_all_repositories_and_clamps_limit_to_fifty()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+        for (var index = 0; index < 55; index++)
+        {
+            var repo = index % 2 == 0 ? "owner/one" : "owner/two";
+            await repository.CreatePostAsync(PostInput(repo, $"post {index}", "body"), [1f], ModelId);
+        }
+
+        var provider = new RecordingEmbeddingProvider(_ => throw new InvalidOperationException("must not embed"));
+        var service = CreateService(repository, provider);
+
+        var results = await service.BrowsePostsAsync(null, int.MaxValue);
+
+        Assert.Equal(50, results.Count);
+        Assert.Contains(results, result => result.Repo == "owner/one");
+        Assert.Contains(results, result => result.Repo == "owner/two");
+        Assert.Equal(Enumerable.Range(6, 50).Reverse().Select(index => (long)index), results.Select(result => result.PostId));
+        Assert.Empty(provider.Texts);
+    }
+
+    [Fact]
+    public async Task BrowsePosts_rejects_non_positive_limit()
+    {
+        var provider = new RecordingEmbeddingProvider(_ => [1f]);
+        var service = await CreateServiceAsync(provider);
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() => service.BrowsePostsAsync(null, 0));
+
+        Assert.Empty(provider.Texts);
+    }
+
+    [Fact]
     public async Task ChildOperationsRemainAppendOnlyAndExposeRawSummaries()
     {
         var service = await CreateServiceAsync(new RecordingEmbeddingProvider(_ => [1f]));

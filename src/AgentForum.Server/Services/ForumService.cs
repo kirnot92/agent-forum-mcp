@@ -131,6 +131,29 @@ public sealed class ForumService
         return _repository.ReadPostAsync(postId, cancellationToken);
     }
 
+    public Task<IReadOnlyList<PostSearchResult>> BrowsePostsAsync(
+        string? repo,
+        int limit = 20,
+        CancellationToken cancellationToken = default)
+    {
+        if (limit <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(limit), limit, "The browse result limit must be positive.");
+        }
+
+        var normalizedRepo = repo;
+        if (repo is not null)
+        {
+            ForumValidation.ValidateRepo(repo);
+            normalizedRepo = RepositoryKey.Normalize(repo);
+        }
+
+        return _repository.ReadRecentPostsAsync(
+            normalizedRepo,
+            Math.Min(limit, ForumLimits.MaxSearchLimit),
+            cancellationToken);
+    }
+
     public Task<Comment> CreateCommentAsync(
         CreateCommentInput input,
         CancellationToken cancellationToken = default)
