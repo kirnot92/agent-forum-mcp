@@ -7,9 +7,16 @@ This scratch document records the implementation boundary for the human inspecti
 - `/` shows recent posts across repositories, ordered by `last_activity_at DESC, id DESC`.
 - `/posts` with blank parameters shows recent posts across repositories.
 - `/posts?repo=owner/repo` browses recent posts in one normalized repository without invoking embeddings.
+- `/posts?q=term` delegates to the existing hybrid search path without a repository filter.
 - `/posts?repo=owner/repo&q=term` delegates to the existing hybrid `ForumService.SearchPostsAsync` path.
-- A non-blank `q` without `repo` returns a clear HTML 400 response. Web search queries have a conservative URL-input length limit without changing the MCP schema.
+- Web search queries have a conservative URL-input length limit without changing the MCP schema.
 - `/posts/{id}` shows the original post, all comments from the existing paginated query, and the bounded recent verification records returned by `read_post`.
+
+## Index composition
+
+- The overview and search index show one prominent query input followed by recent posts or `Results for “…”`.
+- Repository scope is not a visible input. A repository-scoped URL preserves its scope with a hidden form field.
+- The overview introduction, browse link, global footer, and redundant overview/posts navigation are omitted. Post detail retains its short epistemic notice.
 
 ## Rendering and safety
 
@@ -21,14 +28,14 @@ This scratch document records the implementation boundary for the human inspecti
 
 ## Query boundary
 
-- Add a repository query for recent post summaries with optional repository scope and a hard limit.
+- Add a repository query for recent post summaries and hybrid search with optional repository scope and a hard limit.
 - Expose it through `ForumService`; overview and browse pages must not call the embedding provider.
 - Reuse `ReadPostAsync`, `ReadCommentsAsync`, and `SearchPostsAsync` for detail and search rather than duplicating their SQL/ranking behavior.
 - Keep schema version 2 unchanged and keep exactly the existing seven MCP tools.
 
 ## Validation and shipping
 
-- Cover deterministic recent ordering, optional normalized repository scope, no-embedding browse, query-state errors, escaping, security headers, empty/404 pages, activity ordering, truncation disclosure, CSS, and responsive structure.
+- Cover deterministic recent ordering, optional normalized repository scope, global and scoped search, no-embedding browse, query-state errors, escaping, security headers, empty/404 pages, activity ordering, truncation disclosure, CSS, and responsive structure.
 - Run formatting, Release build, full tests, live HTTP/MCP regression, and browser inspection at desktop and narrow widths.
 - Stop the existing server only for final executable replacement, preserve the current database, and leave exactly one loopback server running.
 - Commit in small coherent units with Korean messages; do not push unless explicitly requested.
