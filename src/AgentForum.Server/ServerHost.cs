@@ -1,12 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Json.Serialization.Metadata;
-using AgentForum.Server.Configuration;
-using AgentForum.Server.Embeddings;
 using AgentForum.Server.McpTools;
-using AgentForum.Server.Persistence;
-using AgentForum.Server.Services;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -38,23 +33,10 @@ internal static class ServerHost
             options.LogToStandardErrorThreshold = LogLevel.Trace;
         });
 
-        var databaseOptions = builder.Configuration
-            .GetSection(DatabaseOptions.SectionName)
-            .Get<DatabaseOptions>() ?? new DatabaseOptions();
-        var embeddingOptions = builder.Configuration
-            .GetSection(EmbeddingOptions.SectionName)
-            .Get<EmbeddingOptions>() ?? new EmbeddingOptions();
-
-        builder.Services.AddSingleton(databaseOptions);
-        builder.Services.AddSingleton(embeddingOptions);
-        builder.Services.AddSingleton(TimeProvider.System);
-        builder.Services.AddSingleton<SqliteForumRepository>();
-        builder.Services.AddSingleton<IForumRepository>(services =>
-            services.GetRequiredService<SqliteForumRepository>());
-        builder.Services.AddSingleton<IEmbeddingProvider, LlamaSharpQwenEmbeddingProvider>();
-        builder.Services.AddSingleton<ForumService>();
-
-        configureOverrides?.Invoke(builder.Services);
+        AgentForumServiceRegistration.AddAgentForumServices(
+            builder.Services,
+            builder.Configuration,
+            configureOverrides);
 
         var mcpBuilder = builder.Services.AddMcpServer();
         if (inputStream is null)
