@@ -25,9 +25,9 @@ public sealed class InMemoryExactVectorSearchIndexTests : IDisposable
         await index.InitializeAsync();
 
         Assert.Equal(1, repository.EmbeddingReadCount);
-        Assert.Equal([first.Id], index.Search("git@github.com:OWNER/ONE.git", [1f, 0f], 50));
-        Assert.Equal([second.Id, first.Id], index.Search(null, [0f, 1f], 50));
-        Assert.Equal([first.Id], index.Search("owner/one", [1f, 0f], 50));
+        Assert.Equal([first.Id], PostIds(index.Search("git@github.com:OWNER/ONE.git", [1f, 0f], 50)));
+        Assert.Equal([second.Id, first.Id], PostIds(index.Search(null, [0f, 1f], 50)));
+        Assert.Equal([first.Id], PostIds(index.Search("owner/one", [1f, 0f], 50)));
         Assert.Equal(1, repository.EmbeddingReadCount);
     }
 
@@ -46,7 +46,31 @@ public sealed class InMemoryExactVectorSearchIndexTests : IDisposable
 
         Assert.Equal(
             Enumerable.Range(1, 50).Select(value => (long)value),
-            vectorIndex.Search("owner/repo", [1f], 50));
+            PostIds(vectorIndex.Search("owner/repo", [1f], 50)));
+    }
+
+    [Fact]
+    public async Task Search_ReportsSimilarityAndComputeSimilaritiesCoversLexicalOnlyCandidates()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+        var aligned = await repository.CreatePostAsync(PostInput("owner/repo", "aligned"), [1f, 0f], ModelId);
+        var orthogonal = await repository.CreatePostAsync(PostInput("owner/repo", "orthogonal"), [0f, 1f], ModelId);
+        var opposite = await repository.CreatePostAsync(PostInput("owner/repo", "opposite"), [-1f, 0f], ModelId);
+        using var index = CreateIndex(repository);
+        await index.InitializeAsync();
+
+        var hits = index.Search("owner/repo", [1f, 0f], 2);
+        Assert.Equal([aligned.Id, orthogonal.Id], PostIds(hits));
+        Assert.Equal(1d, hits[0].Similarity, 6);
+        Assert.Equal(0d, hits[1].Similarity, 6);
+
+        var similarities = index.ComputeSimilarities([opposite.Id, aligned.Id, 999L], [1f, 0f]);
+        Assert.Equal(2, similarities.Count);
+        Assert.Equal(-1d, similarities[opposite.Id], 6);
+        Assert.Equal(1d, similarities[aligned.Id], 6);
+        Assert.False(similarities.ContainsKey(999L));
+        Assert.Empty(index.ComputeSimilarities([], [1f, 0f]));
     }
 
     [Fact]
@@ -62,8 +86,11 @@ public sealed class InMemoryExactVectorSearchIndexTests : IDisposable
         callerOwned[0] = -1f;
         index.Add("owner/repo", 2, [0f, 1f]);
 
-        Assert.Equal([1L, 2L], index.Search("owner/repo", [1f, 0f], 2));
+        Assert.Equal([1L, 2L], PostIds(index.Search("owner/repo", [1f, 0f], 2)));
     }
+
+    private static IEnumerable<long> PostIds(IReadOnlyList<VectorSearchHit> hits) =>
+        hits.Select(hit => hit.PostId);
 
     [Fact]
     public async Task Search_RejectsDimensionMismatchAndCancellation()
@@ -132,7 +159,7 @@ public sealed class InMemoryExactVectorSearchIndexTests : IDisposable
 
         Assert.Equal(
             Enumerable.Range(1, 50).Select(value => (long)value),
-            index.Search("owner/repo", [1f], 50));
+            PostIds(index.Search("owner/repo", [1f], 50)));
     }
 
     private InMemoryExactVectorSearchIndex CreateIndex(IForumRepository repository) =>

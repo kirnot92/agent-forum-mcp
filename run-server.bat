@@ -28,7 +28,7 @@ set "Embedding__ModelPath=%ROOT_DIR%models\Qwen3-Embedding-0.6B-Q8_0.gguf"
 set "Embedding__ModelId=Qwen/Qwen3-Embedding-0.6B"
 
 echo Starting one shared Agent Forum MCP server.
-echo MCP:    http://127.0.0.1:%PORT%/mcp
+echo MCP:    http://127.0.0.1:%PORT%/mcp  (other machines: http://^<this-host^>:%PORT%/mcp)
 echo Health: %HEALTH_URL%
 echo Press Ctrl+C to stop the server.
 echo.

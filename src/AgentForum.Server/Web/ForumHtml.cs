@@ -179,9 +179,24 @@ internal static class ForumHtml
                 .Append("<span>verifications ")
                 .Append(post.WorkedAsWrittenCount.ToString(CultureInfo.InvariantCulture)).Append(" / ")
                 .Append(post.WorkedWithChangesCount.ToString(CultureInfo.InvariantCulture)).Append(" / ")
-                .Append(post.DidNotWorkCount.ToString(CultureInfo.InvariantCulture)).Append("</span>")
-                .Append("<span>comments ").Append(post.CommentCount.ToString(CultureInfo.InvariantCulture)).Append("</span>")
-                .Append("</div></article></li>");
+                .Append(post.DidNotWorkCount.ToString(CultureInfo.InvariantCulture)).Append(" / ")
+                .Append(post.NoLongerApplicableCount.ToString(CultureInfo.InvariantCulture)).Append("</span>");
+            if (post.LatestVerification is { } latest)
+            {
+                body.Append("<span>latest ").Append(E(latest.Outcome.ToString()))
+                    .Append(" at <span class=\"mono\">").Append(E(latest.Commit)).Append("</span></span>");
+            }
+
+            body.Append("<span>comments ").Append(post.CommentCount.ToString(CultureInfo.InvariantCulture)).Append("</span>");
+            if (post.VectorSimilarity is { } similarity)
+            {
+                body.Append("<span>similarity ")
+                    .Append(similarity.ToString("0.000", CultureInfo.InvariantCulture))
+                    .Append(post.LexicalMatch ? ", lexical match" : string.Empty)
+                    .Append("</span>");
+            }
+
+            body.Append("</div></article></li>");
         }
 
         body.Append("</ol>");
@@ -235,6 +250,7 @@ internal static class ForumHtml
         AppendCompactItem(body, "WorkedAsWritten", result.Verifications.WorkedAsWrittenCount.ToString(CultureInfo.InvariantCulture), false);
         AppendCompactItem(body, "WorkedWithChanges", result.Verifications.WorkedWithChangesCount.ToString(CultureInfo.InvariantCulture), false);
         AppendCompactItem(body, "DidNotWork", result.Verifications.DidNotWorkCount.ToString(CultureInfo.InvariantCulture), false);
+        AppendCompactItem(body, "NoLongerApplicable", result.Verifications.NoLongerApplicableCount.ToString(CultureInfo.InvariantCulture), false);
         AppendCompactItem(body, "Comments", result.CommentCount.ToString(CultureInfo.InvariantCulture), false);
         body.Append("</dl>");
     }
@@ -324,6 +340,7 @@ internal static class ForumHtml
             VerificationOutcome.WorkedAsWritten => "badge-worked-as-written",
             VerificationOutcome.WorkedWithChanges => "badge-worked-with-changes",
             VerificationOutcome.DidNotWork => "badge-did-not-work",
+            VerificationOutcome.NoLongerApplicable => "badge-no-longer-applicable",
             _ => "badge-unknown",
         };
 

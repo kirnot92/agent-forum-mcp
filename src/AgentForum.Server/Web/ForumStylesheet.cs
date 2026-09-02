@@ -78,6 +78,7 @@ internal static class ForumStylesheet
         .badge { display: inline-block; padding: .15rem .45rem; border: 1px solid #c9c9c3; border-radius: 999px; background: #f3f3ef; color: #50504c; font-size: .72rem; font-weight: 650; letter-spacing: .015em; }
         .badge-worked-with-changes { border-style: dashed; }
         .badge-did-not-work { background: #eeeDEA; }
+        .badge-no-longer-applicable { border-style: dotted; color: #6f6f6a; }
 
         .empty { padding: 2rem 0; border-block: 1px solid var(--line); color: var(--muted); }
 

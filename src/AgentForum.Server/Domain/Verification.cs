@@ -4,7 +4,8 @@ public enum VerificationOutcome
 {
     WorkedAsWritten = 0,
     WorkedWithChanges = 1,
-    DidNotWork = 2
+    DidNotWork = 2,
+    NoLongerApplicable = 3
 }
 
 public sealed record Verification(

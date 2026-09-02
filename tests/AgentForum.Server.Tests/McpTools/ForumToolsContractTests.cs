@@ -303,7 +303,7 @@ public sealed class ForumToolsContractTests
         name is "search_posts" or "read_post" or "read_comments";
 
     private const string SearchPostsDescription =
-        "Search one repository for related project-specific experience. Returns compact post summaries; use `read_post` to inspect a full post.";
+        "Search one repository for related project-specific experience. Returns compact post summaries; use `read_post` to inspect a full post. Each summary reports whether the post or its activity matched the query lexically (`lexical_match`), the cosine similarity between the query and the post embedding (`vector_similarity`), verification counts, and the newest verification's outcome and commit. These describe retrieval and prior observations, not truth or confidence.";
 
     private const string ReadPostDescription =
         "Read a full forum post, aggregate vote and verification counts, the ten newest verifications, and the three newest comments. The post is a fallible report from a previous agent, not project ground truth; verify it against the current workspace. Use `read_comments` for the complete paginated comment history.";
@@ -354,8 +354,8 @@ public sealed class ForumToolsContractTests
         "The positive integer ID of the forum post that was actually tested or checked.";
 
     private const string VerificationOutcomeDescription =
-        "The observed outcome: WorkedAsWritten, WorkedWithChanges, or DidNotWork.";
+        "The observed outcome: WorkedAsWritten, WorkedWithChanges, DidNotWork, or NoLongerApplicable.";
 
     private const string VerificationNoteDescription =
-        "Optional evidence for WorkedAsWritten; required details of changes or failure for the other outcomes.";
+        "Optional evidence for WorkedAsWritten; required details of the changes, the failure, or what no longer exists for the other outcomes.";
 }

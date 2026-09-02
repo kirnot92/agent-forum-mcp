@@ -13,7 +13,7 @@ public sealed class InMemoryExactVectorSearchIndex : IVectorSearchIndex, IDispos
     private readonly ReaderWriterLockSlim _stateLock = new();
 
     private Dictionary<string, List<IndexedVector>> _shards = new(StringComparer.Ordinal);
-    private HashSet<long> _postIds = [];
+    private Dictionary<long, IndexedVector> _vectorsById = [];
     private IndexState _state;
     private long _stateVersion;
     private Exception? _staleCause;
@@ -68,7 +68,7 @@ public sealed class InMemoryExactVectorSearchIndex : IVectorSearchIndex, IDispos
                     .ReadAllStoredEmbeddingsAsync(_modelId, cancellationToken)
                     .ConfigureAwait(false);
                 var mutableShards = new Dictionary<string, List<IndexedVector>>(StringComparer.Ordinal);
-                var postIds = new HashSet<long>();
+                var vectorsById = new Dictionary<long, IndexedVector>();
 
                 foreach (var stored in storedEmbeddings)
                 {
@@ -87,8 +87,9 @@ public sealed class InMemoryExactVectorSearchIndex : IVectorSearchIndex, IDispos
 
                     // Bootstrap arrays are newly decoded by the repository and ownership is
                     // transferred directly to the index to avoid a second full-sized copy.
-                    shard.Add(new IndexedVector(stored.PostId, stored.Dimensions, stored.Vector));
-                    postIds.Add(stored.PostId);
+                    var indexed = new IndexedVector(stored.PostId, stored.Dimensions, stored.Vector);
+                    shard.Add(indexed);
+                    vectorsById.Add(stored.PostId, indexed);
                 }
 
                 _stateLock.EnterWriteLock();
@@ -100,7 +101,7 @@ public sealed class InMemoryExactVectorSearchIndex : IVectorSearchIndex, IDispos
                     }
 
                     _shards = mutableShards;
-                    _postIds = postIds;
+                    _vectorsById = vectorsById;
                     _staleCause = null;
                     _state = IndexState.Ready;
                     return;
@@ -117,7 +118,7 @@ public sealed class InMemoryExactVectorSearchIndex : IVectorSearchIndex, IDispos
         }
     }
 
-    public IReadOnlyList<long> Search(
+    public IReadOnlyList<VectorSearchHit> Search(
         string? repo,
         ReadOnlySpan<float> normalizedQueryEmbedding,
         int limit,
@@ -159,13 +160,61 @@ public sealed class InMemoryExactVectorSearchIndex : IVectorSearchIndex, IDispos
                 .Select(item => item.Element)
                 .OrderByDescending(candidate => candidate.Similarity)
                 .ThenBy(candidate => candidate.PostId)
-                .Select(candidate => candidate.PostId)
+                .Select(candidate => new VectorSearchHit(candidate.PostId, candidate.Similarity))
                 .ToArray();
         }
         finally
         {
             _stateLock.ExitReadLock();
         }
+    }
+
+    public IReadOnlyDictionary<long, double> ComputeSimilarities(
+        IReadOnlyCollection<long> postIds,
+        ReadOnlySpan<float> normalizedQueryEmbedding,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(postIds);
+        if (normalizedQueryEmbedding.IsEmpty)
+        {
+            throw new ArgumentException("The query embedding must not be empty.", nameof(normalizedQueryEmbedding));
+        }
+
+        var similarities = new Dictionary<long, double>(postIds.Count);
+        if (postIds.Count == 0)
+        {
+            return similarities;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        _stateLock.EnterReadLock();
+        try
+        {
+            EnsureSearchable();
+            foreach (var postId in postIds)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (similarities.ContainsKey(postId) || !_vectorsById.TryGetValue(postId, out var vector))
+                {
+                    // Posts without an indexed vector for the configured model
+                    // are simply absent from the result.
+                    continue;
+                }
+
+                if (vector.Dimensions != normalizedQueryEmbedding.Length || vector.Vector.Length != vector.Dimensions)
+                {
+                    throw IncompatibleDimensions(vector.PostId, vector.Dimensions, normalizedQueryEmbedding.Length);
+                }
+
+                similarities.Add(postId, VectorMath.CosineSimilarity(normalizedQueryEmbedding, vector.Vector));
+            }
+        }
+        finally
+        {
+            _stateLock.ExitReadLock();
+        }
+
+        return similarities;
     }
 
     public void Add(
@@ -199,7 +248,7 @@ public sealed class InMemoryExactVectorSearchIndex : IVectorSearchIndex, IDispos
         try
         {
             EnsureSearchable();
-            if (!_postIds.Add(postId))
+            if (_vectorsById.ContainsKey(postId))
             {
                 return;
             }
@@ -210,7 +259,9 @@ public sealed class InMemoryExactVectorSearchIndex : IVectorSearchIndex, IDispos
                 _shards.Add(normalizedRepo, shard);
             }
 
-            shard.Add(new IndexedVector(postId, ownedVector.Length, ownedVector));
+            var indexed = new IndexedVector(postId, ownedVector.Length, ownedVector);
+            shard.Add(indexed);
+            _vectorsById.Add(postId, indexed);
         }
         finally
         {

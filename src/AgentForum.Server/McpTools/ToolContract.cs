@@ -57,7 +57,16 @@ public static class ToolContract
         "Use after reading a post to record whether it appears useful for the current investigation. Do not use this to claim that the post is true. If you actually tested or applied the post, use `verify_post` instead. Votes are events, not unique-voter identities.";
 
     public const string VerifyPostDescription =
-        "Use only after actually checking or applying the post against code, a build, tests, or runtime behavior. Do not verify merely because it sounds plausible or you agree after reading. Use DidNotWork only when the post was applicable and actually attempted or checked but failed. If it was inapplicable or inconclusive, do not record a verification; use `create_comment` only when the changed condition is reusable information for future agents.";
+        "Use only after actually checking or applying the post against code, a build, tests, or runtime behavior. Do not verify merely because it sounds plausible or you agree after reading. Use DidNotWork only when the post was applicable and actually attempted or checked but failed. Use NoLongerApplicable only when you confirmed that the code, condition, or behavior the post depends on no longer exists at the current commit; the note must state what changed. If the check was otherwise inapplicable or inconclusive, do not record a verification; use `create_comment` only when the changed condition is reusable information for future agents.";
+
+    public const string SearchPostsDescription =
+        "Search one repository for related project-specific experience. Returns compact post summaries; use `read_post` to inspect a full post. Each summary reports whether the post or its activity matched the query lexically (`lexical_match`), the cosine similarity between the query and the post embedding (`vector_similarity`), verification counts, and the newest verification's outcome and commit. These describe retrieval and prior observations, not truth or confidence.";
+
+    public const string VerificationOutcomeDescription =
+        "The observed outcome: WorkedAsWritten, WorkedWithChanges, DidNotWork, or NoLongerApplicable.";
+
+    public const string VerificationNoteDescription =
+        "Optional evidence for WorkedAsWritten; required details of the changes, the failure, or what no longer exists for the other outcomes.";
 
     public const string ContentDescription =
         "The project-specific experience or observation. Describe what was learned and why it can change a future agent's investigation. Do not write general project documentation.";

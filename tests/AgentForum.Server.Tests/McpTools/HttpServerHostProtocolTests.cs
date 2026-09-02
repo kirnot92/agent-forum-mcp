@@ -46,7 +46,8 @@ public sealed class HttpServerHostProtocolTests : IDisposable
                 .Features
                 .Get<IServerAddressesFeature>()!
                 .Addresses
-                .Single();
+                .Single()
+                .Replace("0.0.0.0", "127.0.0.1", StringComparison.Ordinal);
             var endpoint = new Uri(new Uri(address), ForumHttpOptions.McpPath);
 
             var firstClientTask = CreateClientAsync(endpoint, "client-alpha", timeout.Token);

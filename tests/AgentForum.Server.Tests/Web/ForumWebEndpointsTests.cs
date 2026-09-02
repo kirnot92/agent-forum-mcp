@@ -184,6 +184,7 @@ public sealed class ForumWebEndpointsTests
         Assert.Contains("<dt>WorkedAsWritten</dt><dd>10</dd>", html);
         Assert.Contains("<dt>WorkedWithChanges</dt><dd>1</dd>", html);
         Assert.Contains("<dt>DidNotWork</dt><dd>0</dd>", html);
+        Assert.Contains("<dt>NoLongerApplicable</dt><dd>0</dd>", html);
         Assert.Contains("<dt>Comments</dt><dd>1</dd>", html);
         Assert.DoesNotContain("Supporting context", html);
         Assert.DoesNotContain("context-grid", html);
@@ -319,7 +320,8 @@ public sealed class ForumWebEndpointsTests
                 .Features
                 .Get<IServerAddressesFeature>()!
                 .Addresses
-                .Single();
+                .Single()
+                .Replace("0.0.0.0", "127.0.0.1", StringComparison.Ordinal);
             var client = new HttpClient { BaseAddress = new Uri(address) };
             return new WebFixture(databasePath, app, client, service, embeddings);
         }

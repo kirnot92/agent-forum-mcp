@@ -34,8 +34,11 @@ internal static class HttpServerHost
         var port = portOverride ?? configuredOptions.Port;
         ForumHttpOptions.ValidatePort(port, allowDynamicPort: portOverride.HasValue);
 
+        // Bind every IPv4 interface so agents on other machines in the trusted
+        // network can share this one server process. The endpoint has no
+        // authentication, so the host must not be reachable from untrusted networks.
         builder.WebHost.ConfigureKestrel(kestrel =>
-            kestrel.Listen(IPAddress.Loopback, port));
+            kestrel.Listen(IPAddress.Any, port));
 
         AgentForumServiceRegistration.AddAgentForumServices(
             builder.Services,

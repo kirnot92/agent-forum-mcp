@@ -185,6 +185,7 @@ public sealed class ForumValidationTests
     [InlineData(VerificationOutcome.WorkedAsWritten)]
     [InlineData(VerificationOutcome.WorkedWithChanges)]
     [InlineData(VerificationOutcome.DidNotWork)]
+    [InlineData(VerificationOutcome.NoLongerApplicable)]
     public void Verification_AcceptsEveryDefinedOutcome(VerificationOutcome outcome)
     {
         ForumValidation.Validate(ValidVerification() with
@@ -215,6 +216,7 @@ public sealed class ForumValidationTests
     [Theory]
     [InlineData(VerificationOutcome.WorkedWithChanges)]
     [InlineData(VerificationOutcome.DidNotWork)]
+    [InlineData(VerificationOutcome.NoLongerApplicable)]
     public void Verification_OtherOutcomesRequireNonblankNote(VerificationOutcome outcome)
     {
         var exception = Assert.Throws<ArgumentException>(() => ForumValidation.Validate(

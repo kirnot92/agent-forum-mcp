@@ -148,7 +148,7 @@ public sealed class ForumServiceTests : IDisposable
             ["Lexical hit\n\ncontains parser token"] = [0f, 1f],
             ["Semantic hit\n\ndifferent words"] = [1f, 0f],
             ["Other repo\n\nparser token"] = [1f, 0f],
-            ["parser"] = [1f, 0f],
+            [QueryEmbeddingText.Compose("parser")] = [1f, 0f],
         };
         var service = await CreateServiceAsync(new RecordingEmbeddingProvider(text => vectors[text]));
         var lexical = await service.CreatePostAsync(PostInput("repo-a", "Lexical hit", "contains parser token"));
@@ -159,6 +159,27 @@ public sealed class ForumServiceTests : IDisposable
 
         Assert.Equal([lexical.Id, semantic.Id], results.Select(result => result.PostId));
         Assert.All(results, result => Assert.Equal("repo-a", result.Repo));
+
+        // Every result carries retrieval information: the lexical-only post still
+        // gets its similarity computed, and the vector-only post is marked as such.
+        Assert.True(results[0].LexicalMatch);
+        Assert.Equal(0d, results[0].VectorSimilarity!.Value, 6);
+        Assert.False(results[1].LexicalMatch);
+        Assert.Equal(1d, results[1].VectorSimilarity!.Value, 6);
+    }
+
+    [Fact]
+    public async Task SearchPosts_EmbedsQueryWithInstructionPrefixButPostsWithout()
+    {
+        var provider = new RecordingEmbeddingProvider(_ => [1f]);
+        var service = await CreateServiceAsync(provider);
+        await service.CreatePostAsync(PostInput("repo-a", "title", "content"));
+
+        await service.SearchPostsAsync("repo-a", "plain question", 10);
+
+        Assert.Equal(
+            ["title\n\ncontent", "Instruct: " + QueryEmbeddingText.Instruction + "\nQuery: plain question"],
+            provider.Texts);
     }
 
     [Fact]
@@ -168,7 +189,7 @@ public sealed class ForumServiceTests : IDisposable
         {
             ["First semantic post\n\nplain alpha"] = [1f, 0f],
             ["Second semantic post\n\nplain beta"] = [0f, 1f],
-            ["unwritten semantic query"] = [1f, 0f],
+            [QueryEmbeddingText.Compose("unwritten semantic query")] = [1f, 0f],
         };
         var service = await CreateServiceAsync(new RecordingEmbeddingProvider(text => vectors[text]));
         var first = await service.CreatePostAsync(PostInput("owner/one", "First semantic post", "plain alpha"));
@@ -292,7 +313,7 @@ public sealed class ForumServiceTests : IDisposable
         Assert.Equal("title", read.Post.Title);
         Assert.Equal("content", read.Post.Content);
         Assert.Equal(new VoteSummary(1, 0), read.Votes);
-        Assert.Equal(new VerificationSummary(0, 1, 0), read.Verifications);
+        Assert.Equal(new VerificationSummary(0, 1, 0, 0), read.Verifications);
         Assert.Equal("caveat", Assert.Single(comments.Comments).Content);
     }
 
@@ -349,14 +370,20 @@ public sealed class ForumServiceTests : IDisposable
 
         public Task InitializeAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-        public IReadOnlyList<long> Search(
+        public IReadOnlyList<VectorSearchHit> Search(
             string? repo,
             ReadOnlySpan<float> normalizedQueryEmbedding,
             int limit,
             CancellationToken cancellationToken = default) =>
             IsStale
                 ? throw new InvalidOperationException("stale")
-                : Array.Empty<long>();
+                : Array.Empty<VectorSearchHit>();
+
+        public IReadOnlyDictionary<long, double> ComputeSimilarities(
+            IReadOnlyCollection<long> postIds,
+            ReadOnlySpan<float> normalizedQueryEmbedding,
+            CancellationToken cancellationToken = default) =>
+            new Dictionary<long, double>();
 
         public void Add(string repo, long postId, ReadOnlySpan<float> normalizedEmbedding) =>
             throw new InvalidOperationException("simulated add failure");

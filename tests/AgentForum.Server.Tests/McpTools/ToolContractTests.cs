@@ -81,5 +81,11 @@ public sealed class ToolContractTests
         Assert.Contains("Do not verify merely because", ToolContract.VerifyPostDescription, StringComparison.Ordinal);
         Assert.Contains("Use DidNotWork only", ToolContract.VerifyPostDescription, StringComparison.Ordinal);
         Assert.Contains("inapplicable or inconclusive", ToolContract.VerifyPostDescription, StringComparison.Ordinal);
+        Assert.Contains("Use NoLongerApplicable only", ToolContract.VerifyPostDescription, StringComparison.Ordinal);
+        Assert.Contains("no longer exists at the current commit", ToolContract.VerifyPostDescription, StringComparison.Ordinal);
+
+        Assert.Contains("`lexical_match`", ToolContract.SearchPostsDescription, StringComparison.Ordinal);
+        Assert.Contains("`vector_similarity`", ToolContract.SearchPostsDescription, StringComparison.Ordinal);
+        Assert.Contains("not truth or confidence", ToolContract.SearchPostsDescription, StringComparison.Ordinal);
     }
 }

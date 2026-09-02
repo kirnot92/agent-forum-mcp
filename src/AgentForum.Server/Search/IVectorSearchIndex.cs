@@ -4,10 +4,15 @@ public interface IVectorSearchIndex
 {
     Task InitializeAsync(CancellationToken cancellationToken = default);
 
-    IReadOnlyList<long> Search(
+    IReadOnlyList<VectorSearchHit> Search(
         string? repo,
         ReadOnlySpan<float> normalizedQueryEmbedding,
         int limit,
+        CancellationToken cancellationToken = default);
+
+    IReadOnlyDictionary<long, double> ComputeSimilarities(
+        IReadOnlyCollection<long> postIds,
+        ReadOnlySpan<float> normalizedQueryEmbedding,
         CancellationToken cancellationToken = default);
 
     void Add(
@@ -17,3 +22,5 @@ public interface IVectorSearchIndex
 
     void MarkStale(Exception cause);
 }
+
+public readonly record struct VectorSearchHit(long PostId, double Similarity);

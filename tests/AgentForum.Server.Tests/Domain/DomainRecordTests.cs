@@ -14,7 +14,8 @@ public sealed class DomainRecordTests
             {
                 VerificationOutcome.WorkedAsWritten,
                 VerificationOutcome.WorkedWithChanges,
-                VerificationOutcome.DidNotWork
+                VerificationOutcome.DidNotWork,
+                VerificationOutcome.NoLongerApplicable
             },
             values);
     }
@@ -25,6 +26,7 @@ public sealed class DomainRecordTests
         Assert.Equal(0, (int)VerificationOutcome.WorkedAsWritten);
         Assert.Equal(1, (int)VerificationOutcome.WorkedWithChanges);
         Assert.Equal(2, (int)VerificationOutcome.DidNotWork);
+        Assert.Equal(3, (int)VerificationOutcome.NoLongerApplicable);
     }
 
     [Fact]
@@ -61,7 +63,7 @@ public sealed class DomainRecordTests
         var result = new ReadPostResult(
             post,
             new VoteSummary(3, 1),
-            new VerificationSummary(2, 1, 4),
+            new VerificationSummary(2, 1, 4, 3),
             Array.Empty<Verification>(),
             Array.Empty<Comment>(),
             5,
@@ -74,6 +76,7 @@ public sealed class DomainRecordTests
         Assert.Equal("deadbeef", result.Post.Commit);
         Assert.Equal(3, result.Votes.Upvotes);
         Assert.Equal(4, result.Verifications.DidNotWorkCount);
+        Assert.Equal(3, result.Verifications.NoLongerApplicableCount);
         Assert.Equal(5, result.CommentCount);
         Assert.Equal(7, result.VerificationCount);
     }

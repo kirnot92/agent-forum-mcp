@@ -56,7 +56,9 @@ public static class ForumValidation
         }
 
         OptionalAtMost(input.Note, ForumLimits.MaxVerificationNoteLength, nameof(input.Note));
-        if (input.Outcome is VerificationOutcome.WorkedWithChanges or VerificationOutcome.DidNotWork &&
+        if (input.Outcome is VerificationOutcome.WorkedWithChanges
+                or VerificationOutcome.DidNotWork
+                or VerificationOutcome.NoLongerApplicable &&
             string.IsNullOrWhiteSpace(input.Note))
         {
             throw new ArgumentException($"{input.Outcome} requires a note.", nameof(input.Note));

@@ -561,7 +561,7 @@ public sealed class SqliteForumRepositoryTests : IDisposable
 
         var result = await repository.ReadPostAsync(post.Id);
         Assert.Equal(new VoteSummary(1, 1), result.Votes);
-        Assert.Equal(new VerificationSummary(1, 1, 1), result.Verifications);
+        Assert.Equal(new VerificationSummary(1, 1, 1, 1), result.Verifications);
     }
 
     [Fact]
@@ -676,6 +676,86 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         await Assert.ThrowsAsync<KeyNotFoundException>(() => repository.AddVoteAsync(new VotePostInput(999, 1)));
         await Assert.ThrowsAsync<KeyNotFoundException>(() => repository.AddVerificationAsync(
             VerificationInput(999, VerificationOutcome.DidNotWork)));
+    }
+
+    [Fact]
+    public async Task Lexical_search_falls_back_to_any_term_after_all_term_matches()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+
+        var partialPost = await repository.CreatePostAsync(
+            PostInput("owner/repo", "BindingExpression 런타임 타입", "compiled binding does not imply reflection"),
+            [1f],
+            "model-a");
+        var fullPost = await repository.CreatePostAsync(
+            PostInput("owner/repo", "왜 BindingExpression 이 나타나는가", "reflection 폴백과 무관하다"),
+            [1f],
+            "model-a");
+        var activityOnly = await repository.CreatePostAsync(PostInput("owner/repo", "unrelated", "plain body"), [1f], "model-a");
+        await repository.CreateCommentAsync(CommentInput(activityOnly.Id, "reflection is only mentioned in this comment"));
+        await repository.CreatePostAsync(PostInput("owner/repo", "noise", "nothing shared"), [1f], "model-a");
+
+        // Tier 1: every term in post text. Tier 2: any term in post text.
+        // Tier 3 and 4: the same over comment and verification text.
+        Assert.Equal(
+            [fullPost.Id, partialPost.Id, activityOnly.Id],
+            await repository.SearchLexicalPostIdsAsync("owner/repo", "왜 BindingExpression reflection", 10));
+
+        // The limit still bounds the combined tiers.
+        Assert.Equal(
+            [fullPost.Id],
+            await repository.SearchLexicalPostIdsAsync("owner/repo", "왜 BindingExpression reflection", 1));
+
+        // A term that appears nowhere still yields partial matches instead of nothing.
+        // Both posts match only through the OR tier, so their mutual order is BM25's.
+        var partialMatches = await repository.SearchLexicalPostIdsAsync("owner/repo", "missing_token reflection", 10);
+        Assert.Equal(3, partialMatches.Count);
+        Assert.Equal([partialPost.Id, fullPost.Id], partialMatches.Take(2).Order());
+        Assert.Equal(activityOnly.Id, partialMatches[2]);
+    }
+
+    [Fact]
+    public void Fts_match_expressions_use_and_or_or_between_quoted_tokens()
+    {
+        Assert.Equal("\"alpha\" AND \"beta\"", SqliteForumRepository.BuildFtsMatchExpression("alpha beta"));
+        Assert.Equal(
+            "\"alpha\" OR \"beta\"",
+            SqliteForumRepository.BuildFtsMatchExpression("alpha beta", SqliteForumRepository.FtsMatchMode.AnyTerm));
+        Assert.Null(SqliteForumRepository.BuildFtsMatchExpression("!!!", SqliteForumRepository.FtsMatchMode.AnyTerm));
+    }
+
+    [Fact]
+    public async Task NoLongerApplicable_is_counted_separately_and_latest_verification_is_exposed()
+    {
+        var clock = new MutableTimeProvider(new DateTimeOffset(2026, 3, 4, 5, 6, 7, TimeSpan.Zero));
+        var repository = CreateRepository(clock);
+        await repository.InitializeAsync();
+        var post = await repository.CreatePostAsync(PostInput("owner/repo", "post", "body"), [1f], "model-a");
+        var untouched = await repository.CreatePostAsync(PostInput("owner/repo", "untouched", "body"), [1f], "model-a");
+
+        await repository.AddVerificationAsync(new VerifyPostInput(
+            post.Id, VerificationOutcome.WorkedAsWritten, null, "main", "commit-old"));
+        clock.UtcNow = clock.UtcNow.AddMinutes(1);
+        var latest = await repository.AddVerificationAsync(new VerifyPostInput(
+            post.Id, VerificationOutcome.NoLongerApplicable, "X singleton was removed in commit B", "main", "commit-new"));
+
+        var read = await repository.ReadPostAsync(post.Id);
+        Assert.Equal(new VerificationSummary(1, 0, 0, 1), read.Verifications);
+        Assert.Equal(2, read.VerificationCount);
+
+        var results = await repository.ReadSearchResultsAsync("owner/repo", [post.Id, untouched.Id]);
+        Assert.Equal(1, results[0].NoLongerApplicableCount);
+        Assert.Equal(
+            new LatestVerification(VerificationOutcome.NoLongerApplicable, "commit-new", latest.CreatedAt),
+            results[0].LatestVerification);
+        Assert.Null(results[1].LatestVerification);
+        Assert.False(results[0].LexicalMatch);
+        Assert.Null(results[0].VectorSimilarity);
+
+        Assert.Equal(
+            [post.Id],
+            await repository.SearchLexicalPostIdsAsync("owner/repo", "singleton removed", 10));
     }
 
     private SqliteForumRepository CreateRepository(TimeProvider? timeProvider = null) =>

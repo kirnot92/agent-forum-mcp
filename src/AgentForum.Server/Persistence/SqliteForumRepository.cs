@@ -215,11 +215,15 @@ public sealed partial class SqliteForumRepository : IForumRepository
             result = new ReadPostResult(
                 post,
                 new VoteSummary(reader.GetInt32(9), reader.GetInt32(10)),
-                new VerificationSummary(reader.GetInt32(11), reader.GetInt32(12), reader.GetInt32(13)),
+                new VerificationSummary(
+                    reader.GetInt32(11),
+                    reader.GetInt32(12),
+                    reader.GetInt32(13),
+                    reader.GetInt32(14)),
                 Array.Empty<Verification>(),
                 Array.Empty<Comment>(),
-                reader.GetInt32(14),
-                reader.GetInt32(15));
+                reader.GetInt32(15),
+                reader.GetInt32(16));
         }
 
         var recentVerifications = await ReadRecentVerificationsAsync(
@@ -447,89 +451,140 @@ public sealed partial class SqliteForumRepository : IForumRepository
         }
 
         var normalizedRepo = repo is null ? null : RepositoryKey.Normalize(repo);
-        var matchExpression = BuildFtsMatchExpression(query);
-        if (matchExpression is null)
+        var tokens = TokenizeFtsQuery(query);
+        if (tokens.Length == 0)
         {
             return Array.Empty<long>();
         }
 
+        // Candidates are collected in four tiers. Direct post-text matches come
+        // before activity-only matches, and within each source a match on every
+        // query term comes before the OR fallback, which keeps multi-word
+        // natural-language queries from emptying the lexical ranking when one
+        // term is absent. A single-term query has identical AND and OR forms, so
+        // its fallback tiers are skipped.
+        var allTerms = BuildFtsMatchExpression(tokens, FtsMatchMode.AllTerms);
+        var anyTerm = tokens.Length > 1 ? BuildFtsMatchExpression(tokens, FtsMatchMode.AnyTerm) : null;
+
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         var postIds = new List<long>(limit);
-        await using (var command = connection.CreateCommand())
+        var seenPostIds = new HashSet<long>();
+
+        foreach (var (sql, matchExpression) in new[]
         {
-            command.CommandText = normalizedRepo is null
-                ? """
-                    SELECT posts_fts.rowid
-                    FROM posts_fts
-                    INNER JOIN posts ON posts.id = posts_fts.rowid
-                    WHERE posts_fts MATCH $match
-                    ORDER BY bm25(posts_fts), posts_fts.rowid
-                    LIMIT $limit;
-                    """
-                : """
-                    SELECT posts_fts.rowid
-                    FROM posts_fts
-                    INNER JOIN posts ON posts.id = posts_fts.rowid
-                    WHERE posts_fts MATCH $match AND posts.repo = $repo
-                    ORDER BY bm25(posts_fts), posts_fts.rowid
-                    LIMIT $limit;
-                    """;
-            command.Parameters.AddWithValue("$match", matchExpression);
-            if (normalizedRepo is not null)
-            {
-                command.Parameters.AddWithValue("$repo", normalizedRepo);
-            }
-
-            command.Parameters.AddWithValue("$limit", limit);
-
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                postIds.Add(reader.GetInt64(0));
-            }
-        }
-
-        if (postIds.Count == limit)
+            (PostsFtsSql(normalizedRepo), allTerms),
+            (PostsFtsSql(normalizedRepo), anyTerm),
+            (ActivityFtsSql(normalizedRepo), allTerms),
+            (ActivityFtsSql(normalizedRepo), anyTerm),
+        })
         {
-            return postIds;
-        }
-
-        var seenPostIds = postIds.ToHashSet();
-        await using (var command = connection.CreateCommand())
-        {
-            command.CommandText = normalizedRepo is null
-                ? """
-                    SELECT CAST(post_activity_fts.post_id AS INTEGER)
-                    FROM post_activity_fts
-                    INNER JOIN posts ON posts.id = CAST(post_activity_fts.post_id AS INTEGER)
-                    WHERE post_activity_fts MATCH $match
-                    ORDER BY bm25(post_activity_fts), post_activity_fts.rowid;
-                    """
-                : """
-                    SELECT CAST(post_activity_fts.post_id AS INTEGER)
-                    FROM post_activity_fts
-                    INNER JOIN posts ON posts.id = CAST(post_activity_fts.post_id AS INTEGER)
-                    WHERE post_activity_fts MATCH $match AND posts.repo = $repo
-                    ORDER BY bm25(post_activity_fts), post_activity_fts.rowid;
-                    """;
-            command.Parameters.AddWithValue("$match", matchExpression);
-            if (normalizedRepo is not null)
+            if (matchExpression is null || postIds.Count >= limit)
             {
-                command.Parameters.AddWithValue("$repo", normalizedRepo);
+                continue;
             }
 
-            await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-            while (postIds.Count < limit && await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-            {
-                var postId = reader.GetInt64(0);
-                if (seenPostIds.Add(postId))
-                {
-                    postIds.Add(postId);
-                }
-            }
+            await AppendLexicalMatchesAsync(
+                    connection,
+                    sql,
+                    matchExpression,
+                    normalizedRepo,
+                    limit,
+                    seenPostIds,
+                    postIds,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
         return postIds;
+    }
+
+    private static string PostsFtsSql(string? normalizedRepo) => normalizedRepo is null
+        ? """
+            SELECT posts_fts.rowid
+            FROM posts_fts
+            INNER JOIN posts ON posts.id = posts_fts.rowid
+            WHERE posts_fts MATCH $match
+            ORDER BY bm25(posts_fts), posts_fts.rowid;
+            """
+        : """
+            SELECT posts_fts.rowid
+            FROM posts_fts
+            INNER JOIN posts ON posts.id = posts_fts.rowid
+            WHERE posts_fts MATCH $match AND posts.repo = $repo
+            ORDER BY bm25(posts_fts), posts_fts.rowid;
+            """;
+
+    private static string ActivityFtsSql(string? normalizedRepo) => normalizedRepo is null
+        ? """
+            SELECT CAST(post_activity_fts.post_id AS INTEGER)
+            FROM post_activity_fts
+            INNER JOIN posts ON posts.id = CAST(post_activity_fts.post_id AS INTEGER)
+            WHERE post_activity_fts MATCH $match
+            ORDER BY bm25(post_activity_fts), post_activity_fts.rowid;
+            """
+        : """
+            SELECT CAST(post_activity_fts.post_id AS INTEGER)
+            FROM post_activity_fts
+            INNER JOIN posts ON posts.id = CAST(post_activity_fts.post_id AS INTEGER)
+            WHERE post_activity_fts MATCH $match AND posts.repo = $repo
+            ORDER BY bm25(post_activity_fts), post_activity_fts.rowid;
+            """;
+
+    private static async Task AppendLexicalMatchesAsync(
+        SqliteConnection connection,
+        string sql,
+        string matchExpression,
+        string? normalizedRepo,
+        int limit,
+        HashSet<long> seenPostIds,
+        List<long> postIds,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.AddWithValue("$match", matchExpression);
+        if (normalizedRepo is not null)
+        {
+            command.Parameters.AddWithValue("$repo", normalizedRepo);
+        }
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (postIds.Count < limit && await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            var postId = reader.GetInt64(0);
+            if (seenPostIds.Add(postId))
+            {
+                postIds.Add(postId);
+            }
+        }
+    }
+
+    internal enum FtsMatchMode
+    {
+        AllTerms,
+        AnyTerm
+    }
+
+    internal static string[] TokenizeFtsQuery(string query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+
+        return FtsTokenRegex()
+            .Matches(query)
+            .Select(match => match.Value)
+            .ToArray();
+    }
+
+    internal static string? BuildFtsMatchExpression(string query, FtsMatchMode mode = FtsMatchMode.AllTerms)
+    {
+        var tokens = TokenizeFtsQuery(query);
+        return tokens.Length == 0 ? null : BuildFtsMatchExpression(tokens, mode);
+    }
+
+    private static string BuildFtsMatchExpression(string[] tokens, FtsMatchMode mode)
+    {
+        var separator = mode == FtsMatchMode.AnyTerm ? " OR " : " AND ";
+        return string.Join(separator, tokens.Select(token => $"\"{token}\""));
     }
 
     public async Task<IReadOnlyList<StoredPostEmbedding>> ReadAllStoredEmbeddingsAsync(
@@ -690,20 +745,6 @@ public sealed partial class SqliteForumRepository : IForumRepository
             .Where(resultsById.ContainsKey)
             .Select(postId => resultsById[postId])
             .ToArray();
-    }
-
-    internal static string? BuildFtsMatchExpression(string query)
-    {
-        ArgumentNullException.ThrowIfNull(query);
-
-        var tokens = FtsTokenRegex()
-            .Matches(query)
-            .Select(match => match.Value)
-            .ToArray();
-
-        return tokens.Length == 0
-            ? null
-            : string.Join(" AND ", tokens.Select(token => $"\"{token}\""));
     }
 
     private static async Task<SchemaState> ReadSchemaStateAsync(
@@ -978,7 +1019,17 @@ public sealed partial class SqliteForumRepository : IForumRepository
         reader.GetInt32(10),
         reader.GetInt32(11),
         reader.GetInt32(12),
-        reader.GetInt32(13));
+        reader.GetInt32(13),
+        ReadLatestVerification(reader, 15),
+        reader.GetInt32(14));
+
+    private static LatestVerification? ReadLatestVerification(SqliteDataReader reader, int firstOrdinal) =>
+        reader.IsDBNull(firstOrdinal)
+            ? null
+            : new LatestVerification(
+                (VerificationOutcome)reader.GetInt32(firstOrdinal),
+                reader.GetString(firstOrdinal + 1),
+                ParseTimestamp(reader.GetString(firstOrdinal + 2)));
 
     private static string CreateSnippet(string content)
     {
@@ -1042,6 +1093,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
             COALESCE((SELECT SUM(CASE WHEN outcome = 0 THEN 1 ELSE 0 END) FROM verifications WHERE post_id = p.id), 0),
             COALESCE((SELECT SUM(CASE WHEN outcome = 1 THEN 1 ELSE 0 END) FROM verifications WHERE post_id = p.id), 0),
             COALESCE((SELECT SUM(CASE WHEN outcome = 2 THEN 1 ELSE 0 END) FROM verifications WHERE post_id = p.id), 0),
+            COALESCE((SELECT SUM(CASE WHEN outcome = 3 THEN 1 ELSE 0 END) FROM verifications WHERE post_id = p.id), 0),
             (SELECT COUNT(*) FROM comments WHERE post_id = p.id),
             (SELECT COUNT(*) FROM verifications WHERE post_id = p.id)
         FROM posts AS p
@@ -1057,7 +1109,11 @@ public sealed partial class SqliteForumRepository : IForumRepository
             COALESCE((SELECT SUM(CASE WHEN outcome = 0 THEN 1 ELSE 0 END) FROM verifications WHERE post_id = p.id), 0),
             COALESCE((SELECT SUM(CASE WHEN outcome = 1 THEN 1 ELSE 0 END) FROM verifications WHERE post_id = p.id), 0),
             COALESCE((SELECT SUM(CASE WHEN outcome = 2 THEN 1 ELSE 0 END) FROM verifications WHERE post_id = p.id), 0),
-            (SELECT COUNT(*) FROM comments WHERE post_id = p.id)
+            COALESCE((SELECT SUM(CASE WHEN outcome = 3 THEN 1 ELSE 0 END) FROM verifications WHERE post_id = p.id), 0),
+            (SELECT COUNT(*) FROM comments WHERE post_id = p.id),
+            (SELECT outcome FROM verifications WHERE post_id = p.id ORDER BY created_at DESC, id DESC LIMIT 1),
+            (SELECT commit_hash FROM verifications WHERE post_id = p.id ORDER BY created_at DESC, id DESC LIMIT 1),
+            (SELECT created_at FROM verifications WHERE post_id = p.id ORDER BY created_at DESC, id DESC LIMIT 1)
         FROM posts AS p
         """;
 
@@ -1129,7 +1185,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
         CREATE TABLE IF NOT EXISTS verifications (
             id INTEGER PRIMARY KEY,
             post_id INTEGER NOT NULL REFERENCES posts(id),
-            outcome INTEGER NOT NULL CHECK (outcome IN (0, 1, 2)),
+            outcome INTEGER NOT NULL CHECK (outcome IN (0, 1, 2, 3)),
             note TEXT NULL,
             branch TEXT NOT NULL CHECK (length(trim(branch)) > 0),
             commit_hash TEXT NOT NULL CHECK (length(trim(commit_hash)) > 0),

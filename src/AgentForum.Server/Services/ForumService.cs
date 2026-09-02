@@ -104,8 +104,10 @@ public sealed class ForumService
         ForumValidation.ValidateSearchQuery(query);
         var clampedLimit = ForumValidation.ClampSearchLimit(limit);
 
+        // Only the query side receives the retrieval instruction; stored post
+        // vectors are embedded from plain title and content.
         var queryEmbedding = await _embeddingProvider
-            .EmbedAsync(query, cancellationToken)
+            .EmbedAsync(QueryEmbeddingText.Compose(query), cancellationToken)
             .ConfigureAwait(false);
         var normalizedQueryEmbedding = VectorMath.Normalize(queryEmbedding);
 
@@ -114,18 +116,36 @@ public sealed class ForumService
             query,
             HybridSearchRanker.CandidateLimit,
             cancellationToken);
-        var vectorIds = _vectorSearchIndex.Search(
+        var vectorHits = _vectorSearchIndex.Search(
             repo,
             normalizedQueryEmbedding,
             HybridSearchRanker.CandidateLimit,
             cancellationToken);
+        var vectorIds = vectorHits.Select(hit => hit.PostId).ToArray();
+        var similarityById = vectorHits.ToDictionary(hit => hit.PostId, hit => hit.Similarity);
 
         var lexicalIds = await lexicalTask.ConfigureAwait(false);
+        var lexicalIdSet = lexicalIds.ToHashSet();
 
         var candidateIds = lexicalIds.Concat(vectorIds).Distinct().ToArray();
         if (candidateIds.Length == 0)
         {
             return Array.Empty<PostSearchResult>();
+        }
+
+        // Lexical-only candidates fell outside the bounded vector ranking, so
+        // their similarity is computed directly to give every result the same
+        // retrieval information.
+        var lexicalOnlyIds = lexicalIds.Where(id => !similarityById.ContainsKey(id)).ToArray();
+        if (lexicalOnlyIds.Length > 0)
+        {
+            foreach (var (postId, similarity) in _vectorSearchIndex.ComputeSimilarities(
+                lexicalOnlyIds,
+                normalizedQueryEmbedding,
+                cancellationToken))
+            {
+                similarityById[postId] = similarity;
+            }
         }
 
         var candidates = await _repository
@@ -151,7 +171,13 @@ public sealed class ForumService
 
         return ranking
             .Where(item => candidatesById.ContainsKey(item.PostId))
-            .Select(item => candidatesById[item.PostId])
+            .Select(item => candidatesById[item.PostId] with
+            {
+                LexicalMatch = lexicalIdSet.Contains(item.PostId),
+                VectorSimilarity = similarityById.TryGetValue(item.PostId, out var similarity)
+                    ? similarity
+                    : null,
+            })
             .ToArray();
     }
 

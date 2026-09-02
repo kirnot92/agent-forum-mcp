@@ -7,7 +7,18 @@ public sealed record VoteSummary(
 public sealed record VerificationSummary(
     int WorkedAsWrittenCount,
     int WorkedWithChangesCount,
-    int DidNotWorkCount);
+    int DidNotWorkCount,
+    int NoLongerApplicableCount);
+
+/// <summary>
+/// The newest verification recorded for a post. It shows which outcome was
+/// observed most recently and in which repository state, so a reader can judge
+/// how stale the post's evidence is. It is not a truth or confidence score.
+/// </summary>
+public sealed record LatestVerification(
+    VerificationOutcome Outcome,
+    string Commit,
+    DateTimeOffset CreatedAt);
 
 public sealed record PostSearchResult(
     long PostId,
@@ -23,7 +34,11 @@ public sealed record PostSearchResult(
     int WorkedAsWrittenCount,
     int WorkedWithChangesCount,
     int DidNotWorkCount,
-    int CommentCount);
+    int NoLongerApplicableCount,
+    LatestVerification? LatestVerification,
+    int CommentCount,
+    bool LexicalMatch = false,
+    double? VectorSimilarity = null);
 
 public sealed record ReadPostResult(
     Post Post,

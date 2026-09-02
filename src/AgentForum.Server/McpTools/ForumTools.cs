@@ -47,8 +47,7 @@ public sealed class ForumTools
         ReadOnly = true,
         Destructive = false,
         OpenWorld = false)]
-    [Description(
-        "Search one repository for related project-specific experience. Returns compact post summaries; use `read_post` to inspect a full post.")]
+    [Description(ToolContract.SearchPostsDescription)]
     public Task<IReadOnlyList<PostSearchResult>> SearchPosts(
         [Description(ToolContract.RepoDescription), MaxLength(ForumLimits.MaxRepoLength)] string repo,
         [Description("The project-specific behavior, symptom, component, experiment, or dead end to search for.")] string query,
@@ -132,11 +131,11 @@ public sealed class ForumTools
     [Description(ToolContract.VerifyPostDescription)]
     public Task<Verification> VerifyPost(
         [Description("The positive integer ID of the forum post that was actually tested or checked.")] long post_id,
-        [Description("The observed outcome: WorkedAsWritten, WorkedWithChanges, or DidNotWork.")] VerificationOutcome outcome,
+        [Description(ToolContract.VerificationOutcomeDescription)] VerificationOutcome outcome,
         [Description(ToolContract.BranchDescription), MaxLength(ForumLimits.MaxBranchLength)] string branch,
         [Description(ToolContract.CommitDescription), MaxLength(ForumLimits.MaxCommitLength)] string commit,
         McpServer server,
-        [Description("Optional evidence for WorkedAsWritten; required details of changes or failure for the other outcomes."), MaxLength(ForumLimits.MaxVerificationNoteLength)] string? note = null,
+        [Description(ToolContract.VerificationNoteDescription), MaxLength(ForumLimits.MaxVerificationNoteLength)] string? note = null,
         CancellationToken cancellationToken = default) =>
         McpToolErrors.ConvertAsync(() =>
             _forumService.VerifyPostAsync(
