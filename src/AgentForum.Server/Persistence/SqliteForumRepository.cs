@@ -457,30 +457,24 @@ public sealed partial class SqliteForumRepository : IForumRepository
             return Array.Empty<long>();
         }
 
-        // Candidates are collected in four tiers. Direct post-text matches come
-        // before activity-only matches, and within each source a match on every
-        // query term comes before the OR fallback, which keeps multi-word
-        // natural-language queries from emptying the lexical ranking when one
-        // term is absent. A single-term query has identical AND and OR forms, so
-        // its fallback tiers are skipped.
-        var allTerms = BuildFtsMatchExpression(tokens, FtsMatchMode.AllTerms);
-        var anyTerm = tokens.Length > 1 ? BuildFtsMatchExpression(tokens, FtsMatchMode.AnyTerm) : null;
+        // Every query term must match. Direct post-text matches come before
+        // activity-only matches. An any-term fallback was tried and reverted:
+        // Korean particles such as 안 and 때 appear in almost every post, so the
+        // fallback marked every post as a lexical match and, because RRF only
+        // sees ranks, it displaced the vector ordering. A multi-word query with
+        // no all-term match therefore yields no lexical candidates and the
+        // vector ranking stands alone, which is the honest result.
+        var matchExpression = BuildFtsMatchExpression(tokens);
 
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
         var postIds = new List<long>(limit);
         var seenPostIds = new HashSet<long>();
 
-        foreach (var (sql, matchExpression) in new[]
+        foreach (var sql in new[] { PostsFtsSql(normalizedRepo), ActivityFtsSql(normalizedRepo) })
         {
-            (PostsFtsSql(normalizedRepo), allTerms),
-            (PostsFtsSql(normalizedRepo), anyTerm),
-            (ActivityFtsSql(normalizedRepo), allTerms),
-            (ActivityFtsSql(normalizedRepo), anyTerm),
-        })
-        {
-            if (matchExpression is null || postIds.Count >= limit)
+            if (postIds.Count >= limit)
             {
-                continue;
+                break;
             }
 
             await AppendLexicalMatchesAsync(
@@ -559,12 +553,6 @@ public sealed partial class SqliteForumRepository : IForumRepository
         }
     }
 
-    internal enum FtsMatchMode
-    {
-        AllTerms,
-        AnyTerm
-    }
-
     internal static string[] TokenizeFtsQuery(string query)
     {
         ArgumentNullException.ThrowIfNull(query);
@@ -575,17 +563,14 @@ public sealed partial class SqliteForumRepository : IForumRepository
             .ToArray();
     }
 
-    internal static string? BuildFtsMatchExpression(string query, FtsMatchMode mode = FtsMatchMode.AllTerms)
+    internal static string? BuildFtsMatchExpression(string query)
     {
         var tokens = TokenizeFtsQuery(query);
-        return tokens.Length == 0 ? null : BuildFtsMatchExpression(tokens, mode);
+        return tokens.Length == 0 ? null : BuildFtsMatchExpression(tokens);
     }
 
-    private static string BuildFtsMatchExpression(string[] tokens, FtsMatchMode mode)
-    {
-        var separator = mode == FtsMatchMode.AnyTerm ? " OR " : " AND ";
-        return string.Join(separator, tokens.Select(token => $"\"{token}\""));
-    }
+    private static string BuildFtsMatchExpression(string[] tokens) =>
+        string.Join(" AND ", tokens.Select(token => $"\"{token}\""));
 
     public async Task<IReadOnlyList<StoredPostEmbedding>> ReadAllStoredEmbeddingsAsync(
         string modelId,

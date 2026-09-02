@@ -679,50 +679,30 @@ public sealed class SqliteForumRepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task Lexical_search_falls_back_to_any_term_after_all_term_matches()
+    public async Task Lexical_search_requires_every_term_and_never_falls_back_to_partial_matches()
     {
         var repository = CreateRepository();
         await repository.InitializeAsync();
 
-        var partialPost = await repository.CreatePostAsync(
-            PostInput("owner/repo", "BindingExpression 런타임 타입", "compiled binding does not imply reflection"),
-            [1f],
-            "model-a");
         var fullPost = await repository.CreatePostAsync(
             PostInput("owner/repo", "왜 BindingExpression 이 나타나는가", "reflection 폴백과 무관하다"),
             [1f],
             "model-a");
+        await repository.CreatePostAsync(
+            PostInput("owner/repo", "BindingExpression 런타임 타입", "compiled binding does not imply reflection"),
+            [1f],
+            "model-a");
         var activityOnly = await repository.CreatePostAsync(PostInput("owner/repo", "unrelated", "plain body"), [1f], "model-a");
-        await repository.CreateCommentAsync(CommentInput(activityOnly.Id, "reflection is only mentioned in this comment"));
-        await repository.CreatePostAsync(PostInput("owner/repo", "noise", "nothing shared"), [1f], "model-a");
+        await repository.CreateCommentAsync(CommentInput(activityOnly.Id, "왜 BindingExpression reflection 모두 언급"));
 
-        // Tier 1: every term in post text. Tier 2: any term in post text.
-        // Tier 3 and 4: the same over comment and verification text.
         Assert.Equal(
-            [fullPost.Id, partialPost.Id, activityOnly.Id],
+            [fullPost.Id, activityOnly.Id],
             await repository.SearchLexicalPostIdsAsync("owner/repo", "왜 BindingExpression reflection", 10));
 
-        // The limit still bounds the combined tiers.
-        Assert.Equal(
-            [fullPost.Id],
-            await repository.SearchLexicalPostIdsAsync("owner/repo", "왜 BindingExpression reflection", 1));
-
-        // A term that appears nowhere still yields partial matches instead of nothing.
-        // Both posts match only through the OR tier, so their mutual order is BM25's.
-        var partialMatches = await repository.SearchLexicalPostIdsAsync("owner/repo", "missing_token reflection", 10);
-        Assert.Equal(3, partialMatches.Count);
-        Assert.Equal([partialPost.Id, fullPost.Id], partialMatches.Take(2).Order());
-        Assert.Equal(activityOnly.Id, partialMatches[2]);
-    }
-
-    [Fact]
-    public void Fts_match_expressions_use_and_or_or_between_quoted_tokens()
-    {
+        // A term that appears in no post text and no activity yields nothing rather than
+        // a partial match; the vector ranking alone orders results in that case.
+        Assert.Empty(await repository.SearchLexicalPostIdsAsync("owner/repo", "missing_token reflection", 10));
         Assert.Equal("\"alpha\" AND \"beta\"", SqliteForumRepository.BuildFtsMatchExpression("alpha beta"));
-        Assert.Equal(
-            "\"alpha\" OR \"beta\"",
-            SqliteForumRepository.BuildFtsMatchExpression("alpha beta", SqliteForumRepository.FtsMatchMode.AnyTerm));
-        Assert.Null(SqliteForumRepository.BuildFtsMatchExpression("!!!", SqliteForumRepository.FtsMatchMode.AnyTerm));
     }
 
     [Fact]
