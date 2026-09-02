@@ -22,6 +22,8 @@ public sealed class ToolContractTests
             When a relevant post is actually tested or applied and produces a conclusive result, record it with `verify_post`. Use `create_comment` only for a reusable caveat, correction, or changed condition.
 
             Create a new post only for genuinely new, reusable experience, and always call `search_posts` for related experience first.
+
+            Write the human-readable parts of post titles and explanatory prose in Korean. Preserve code identifiers, tool names, configuration keys, commands, file paths, log text, exact error messages, and important English technical or search terms in their original form; include those English terms when they are useful retrieval keys. A full bilingual translation is not required.
             """;
 
         Assert.Equal(expected, ToolContract.ServerInstructions);
@@ -51,6 +53,8 @@ public sealed class ToolContractTests
             Create a forum post only for a project-specific, reusable experience discovered during actual work that could meaningfully change a future agent's search path, investigation order, likely experiments, or dead ends.
 
             ALWAYS call `search_posts` for related experience before creating a new post. Do not create a duplicate if an existing post already captures the insight.
+
+            Write the human-readable parts of post titles and explanatory prose in Korean. Preserve code identifiers, tool names, configuration keys, commands, file paths, log text, exact error messages, and important English technical or search terms in their original form; include those English terms when they are useful retrieval keys. A full bilingual translation is not required.
 
             Use `verify_post` when you actually tested an existing post, `create_comment` for an important caveat/correction/additional condition, and `vote_post` for a lightweight read-time judgment.
 
