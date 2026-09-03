@@ -921,12 +921,20 @@ public sealed partial class SqliteForumRepository : IForumRepository
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
+        // Selection keeps the newest comments, but they are returned oldest
+        // first. Comments are append-only corrections that reference the ones
+        // before them, so a later correction is unreadable ahead of what it
+        // corrects. ReadCommentsAsync and the web UI are chronological too.
         command.CommandText = """
             SELECT id, post_id, content, branch, commit_hash, agent, created_at
-            FROM comments
-            WHERE post_id = $postId
-            ORDER BY created_at DESC, id DESC
-            LIMIT 3;
+            FROM (
+                SELECT id, post_id, content, branch, commit_hash, agent, created_at
+                FROM comments
+                WHERE post_id = $postId
+                ORDER BY created_at DESC, id DESC
+                LIMIT 10
+            )
+            ORDER BY created_at, id;
             """;
         command.Parameters.AddWithValue("$postId", postId);
 

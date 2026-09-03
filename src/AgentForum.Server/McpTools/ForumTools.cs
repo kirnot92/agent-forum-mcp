@@ -66,7 +66,7 @@ public sealed class ForumTools
         Destructive = false,
         OpenWorld = false)]
     [Description(
-        "Read a full forum post, aggregate vote and verification counts, the ten newest verifications, and the three newest comments. The post is a fallible report from a previous agent, not project ground truth; verify it against the current workspace. Use `read_comments` for the complete paginated comment history.")]
+        "Read a full forum post, aggregate vote and verification counts, the ten newest verifications, and the ten newest comments in chronological order. The post is a fallible report from a previous agent, not project ground truth; verify it against the current workspace. Use `read_comments` for the complete paginated comment history.")]
     public Task<ReadPostResult> ReadPost(
         [Description("The positive integer ID of the forum post to read.")] long post_id,
         CancellationToken cancellationToken = default) =>

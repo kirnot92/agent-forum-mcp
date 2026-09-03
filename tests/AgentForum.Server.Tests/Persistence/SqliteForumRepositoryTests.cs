@@ -488,14 +488,14 @@ public sealed class SqliteForumRepositoryTests : IDisposable
     }
 
     [Fact]
-    public async Task ReadPost_returns_bounded_recent_details_newest_first_and_total_counts()
+    public async Task ReadPost_bounds_recent_details_and_returns_comments_oldest_first()
     {
         var clock = new MutableTimeProvider(new DateTimeOffset(2026, 2, 3, 4, 5, 6, TimeSpan.Zero));
         var repository = CreateRepository(clock);
         await repository.InitializeAsync();
         var post = await repository.CreatePostAsync(PostInput("owner/repo", "post", "content"), [1f], "model-a");
 
-        for (var index = 1; index <= 5; index++)
+        for (var index = 1; index <= 12; index++)
         {
             await repository.CreateCommentAsync(CommentInput(post.Id, $"comment-{index}"));
         }
@@ -512,9 +512,11 @@ public sealed class SqliteForumRepositoryTests : IDisposable
 
         var result = await repository.ReadPostAsync(post.Id);
 
-        Assert.Equal(5, result.CommentCount);
+        Assert.Equal(12, result.CommentCount);
         Assert.Equal(12, result.VerificationCount);
-        Assert.Equal(["comment-5", "comment-4", "comment-3"], result.RecentComments.Select(comment => comment.Content));
+        Assert.Equal(
+            Enumerable.Range(3, 10).Select(index => $"comment-{index}"),
+            result.RecentComments.Select(comment => comment.Content));
         Assert.Equal(Enumerable.Range(3, 10).Reverse().Select(index => $"verification-{index}"),
             result.RecentVerifications.Select(verification => verification.Note));
         Assert.All(result.RecentComments, comment =>
@@ -525,7 +527,7 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         });
 
         var commentPage = await repository.ReadCommentsAsync(post.Id, 5, 0);
-        Assert.Equal(5, commentPage.TotalCount);
+        Assert.Equal(12, commentPage.TotalCount);
         Assert.Equal(["comment-1", "comment-2", "comment-3", "comment-4", "comment-5"],
             commentPage.Comments.Select(comment => comment.Content));
     }

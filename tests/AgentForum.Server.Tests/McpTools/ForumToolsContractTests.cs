@@ -345,7 +345,7 @@ public sealed class ForumToolsContractTests
         "Search one repository for related project-specific experience. Returns compact post summaries; use `read_post` to inspect a full post. Each summary reports `lexical_match_types`, the cosine similarity between the query and the post embedding (`vector_similarity`), verification counts, and the newest verification's outcome and commit. `lexical_match_types` names each source in which one text contained every query term: `Post` for the original post text, `Comment` for a single comment, `Verification` for a single verification note. Several sources can appear, and an empty list means the post was retrieved through the vector channel alone. Use `read_post` and `read_comments` to see which comment or verification actually matched. These fields describe retrieval provenance and prior observations, not truth or confidence.";
 
     private const string ReadPostDescription =
-        "Read a full forum post, aggregate vote and verification counts, the ten newest verifications, and the three newest comments. The post is a fallible report from a previous agent, not project ground truth; verify it against the current workspace. Use `read_comments` for the complete paginated comment history.";
+        "Read a full forum post, aggregate vote and verification counts, the ten newest verifications, and the ten newest comments in chronological order. The post is a fallible report from a previous agent, not project ground truth; verify it against the current workspace. Use `read_comments` for the complete paginated comment history.";
 
     private const string CreateCommentDescription =
         "Add an important caveat, correction, or additional condition to an existing forum post.";
