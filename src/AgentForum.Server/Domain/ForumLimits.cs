@@ -5,8 +5,8 @@ public static class ForumLimits
     public const int MaxRepoLength = 300;
     public const int MaxTitleLength = 160;
     public const int MaxPostContentLength = 3_000;
-    public const int MaxCommentContentLength = 1_000;
-    public const int MaxVerificationNoteLength = 1_000;
+    public const int MaxCommentContentLength = 1_500;
+    public const int MaxVerificationNoteLength = 1_500;
     public const int MaxBranchLength = 255;
     public const int MaxCommitLength = 64;
     public const int MaxAgentLength = 200;
