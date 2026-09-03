@@ -4,8 +4,8 @@ This scratch document records the reasoning behind the 2026-09-02 lexical search
 
 ## Timeline
 
-- Commit `e4aaebd` added an any-term (OR) fallback to `SqliteForumRepository.SearchLexicalPostIdsAsync`. The stated goal was to stop multi-word natural-language queries from producing zero lexical candidates.
-- Commit `ba2935e` reverted the fallback after checking it against the real corpus. Every other change from `e4aaebd` stayed: `vector_similarity` and `lexical_match` in search results, the `NoLongerApplicable` outcome, the Qwen3 query instruction prefix, and the latest-verification summary.
+- Commit `e4aaebd` added an any-term (OR) fallback to the lexical query in `SqliteForumRepository`, then named `SearchLexicalPostIdsAsync` and now `SearchLexicalPostsAsync`. The stated goal was to stop multi-word natural-language queries from producing zero lexical candidates.
+- Commit `ba2935e` reverted the fallback after checking it against the real corpus. Every other change from `e4aaebd` stayed: `vector_similarity` and the lexical-match flag in search results, since replaced by `lexical_match_types`, the `NoLongerApplicable` outcome, the Qwen3 query instruction prefix, and the latest-verification summary.
 
 ## What was observed
 
@@ -65,7 +65,7 @@ Real posts already contain identifiers followed directly by a particle, for exam
 - Lexical search requires every query token. A multi-word query whose terms never co-occur yields no lexical candidates, and the vector ranking orders the results alone.
 - Korean noun and particle mismatch is left to the vector channel.
 - The identifier-plus-particle gap is known and unfixed.
-- `lexical_match` in results means every query token matched, which is why it is meaningful again after the revert.
+- A lexical match in results means every query token matched inside one indexed text, which is why it is meaningful again after the revert. Since 2026-09-03 the result field is `lexical_match_types` and names which of `Post`, `Comment`, and `Verification` matched instead of collapsing them into one boolean. That is retrieval provenance only; candidate selection, ordering, and RRF are unchanged.
 - No similarity threshold is applied; `vector_similarity` is exposed so callers can judge.
 
 The user's stated position is that tuning search quality further is over-engineering at the current corpus size. Ten posts fit inside the vector candidate limit of 50, so every post is already a candidate and only ordering matters.
@@ -81,7 +81,7 @@ Revisit when one of these is observed, not before:
 Method for any ranking change:
 
 1. Build a regression set from real posts: ten to twenty pairs of a realistic query and the post that should rank first. Include bare-identifier queries and Korean sentence queries.
-2. Run the set against the current build through `ForumService.SearchPostsAsync` or the `/posts?repo=...&q=...` route and record the ordering with `vector_similarity` and `lexical_match`.
+2. Run the set against the current build through `ForumService.SearchPostsAsync` or the `/posts?repo=...&q=...` route and record the ordering with `vector_similarity` and `lexical_match_types`.
 3. Apply the candidate change and compare orderings. A change that adds lexical candidates must be judged by what it does to the vector ordering, because RRF will reorder whenever the lexical list is non-empty.
 4. Do not accept a change on the strength of a single-document probe.
 

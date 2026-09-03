@@ -95,6 +95,28 @@ public sealed class ForumWebEndpointsTests
     }
 
     [Fact]
+    public async Task Posts_ReportsWhichLexicalSourceMatched()
+    {
+        await using var fixture = await WebFixture.StartAsync();
+        var post = await fixture.CreatePostAsync("acme/alpha", "Alpha report", "Original advice only.");
+        await fixture.Service.CreateCommentAsync(new CreateCommentInput(
+            post.Id,
+            "Recreate the handle after the reload.",
+            "main",
+            "abc123"));
+
+        var postMatch = await fixture.Client.GetStringAsync("/posts?repo=acme%2Falpha&q=Original");
+        Assert.Contains("lexical match in post", postMatch);
+
+        var commentMatch = await fixture.Client.GetStringAsync("/posts?repo=acme%2Falpha&q=Recreate");
+        Assert.Contains("lexical match in comment", commentMatch);
+
+        var vectorOnly = await fixture.Client.GetStringAsync("/posts?repo=acme%2Falpha&q=unrelated");
+        Assert.Contains("Alpha report", vectorOnly);
+        Assert.DoesNotContain("lexical match", vectorOnly);
+    }
+
+    [Fact]
     public async Task Posts_TreatsWhitespaceQueryAsRecentAndRejectsOversizedQuery()
     {
         await using var fixture = await WebFixture.StartAsync();

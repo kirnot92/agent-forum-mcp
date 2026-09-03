@@ -1,3 +1,4 @@
+using System.Text.Json;
 using AgentForum.Server.Configuration;
 using AgentForum.Server.Domain;
 using AgentForum.Server.Embeddings;
@@ -116,7 +117,7 @@ public sealed class ForumServiceTests : IDisposable
             () => service.CreatePostAsync(PostInput("repo-a", "not stored", "not stored")));
 
         Assert.Empty(await CreateRepository().ReadAllStoredEmbeddingsAsync(ModelId));
-        Assert.Empty(await CreateRepository().SearchLexicalPostIdsAsync("repo-a", "stored", 10));
+        Assert.Empty(await CreateRepository().SearchLexicalPostsAsync("repo-a", "stored", 10));
     }
 
     [Fact]
@@ -137,7 +138,7 @@ public sealed class ForumServiceTests : IDisposable
         Assert.Contains("must be rebuilt", exception.Message, StringComparison.OrdinalIgnoreCase);
         Assert.True(index.IsStale);
         Assert.Single(await repository.ReadAllStoredEmbeddingsAsync(ModelId));
-        Assert.Single(await repository.SearchLexicalPostIdsAsync("repo-a", "stored", 10));
+        Assert.Single(await repository.SearchLexicalPostsAsync("repo-a", "stored", 10));
     }
 
     [Fact]
@@ -162,10 +163,43 @@ public sealed class ForumServiceTests : IDisposable
 
         // Every result carries retrieval information: the lexical-only post still
         // gets its similarity computed, and the vector-only post is marked as such.
-        Assert.True(results[0].LexicalMatch);
+        Assert.Equal([LexicalMatchType.Post], results[0].LexicalMatchTypes);
         Assert.Equal(0d, results[0].VectorSimilarity!.Value, 6);
-        Assert.False(results[1].LexicalMatch);
+        Assert.Empty(results[1].LexicalMatchTypes);
         Assert.Equal(1d, results[1].VectorSimilarity!.Value, 6);
+    }
+
+    [Fact]
+    public async Task SearchPosts_DistinguishesOriginalPostTextFromLaterCorrections()
+    {
+        var vectors = new Dictionary<string, float[]>
+        {
+            ["Corrected post\n\noriginal advice"] = [1f, 0f],
+            [QueryEmbeddingText.Compose("recreate_token")] = [1f, 0f],
+        };
+        var service = await CreateServiceAsync(new RecordingEmbeddingProvider(text => vectors[text]));
+        var post = await service.CreatePostAsync(PostInput("repo-a", "Corrected post", "original advice"));
+        await service.CreateCommentAsync(new CreateCommentInput(
+            post.Id,
+            "recreate_token is required after commit abc",
+            "main",
+            "abc123"));
+        await service.VerifyPostAsync(new VerifyPostInput(
+            post.Id,
+            VerificationOutcome.WorkedWithChanges,
+            "recreate_token was needed to make it work",
+            "main",
+            "abc123"));
+
+        var results = await service.SearchPostsAsync("repo-a", "recreate_token", 10);
+
+        // The original post text never contained the term. The append-only
+        // correction and the empirical note did, and the caller can tell which.
+        var result = Assert.Single(results);
+        Assert.Equal(post.Id, result.PostId);
+        Assert.Equal(
+            [LexicalMatchType.Comment, LexicalMatchType.Verification],
+            result.LexicalMatchTypes);
     }
 
     [Fact]
@@ -213,7 +247,14 @@ public sealed class ForumServiceTests : IDisposable
         var first = await service.SearchPostsAsync("repo-a", "shared", limit: 2);
         var second = await service.SearchPostsAsync("repo-a", "shared", limit: 2);
 
-        Assert.Equal(first, second);
+        // PostSearchResult carries a collection member, so the record's generated
+        // equality compares that member by reference and two independently
+        // produced result sets never compare equal. Determinism is therefore
+        // asserted on the serialized form, which is also what a client receives.
+        var options = ServerHost.CreateMcpJsonOptions();
+        Assert.Equal(
+            JsonSerializer.Serialize(first, options),
+            JsonSerializer.Serialize(second, options));
         Assert.Equal(2, first.Count);
     }
 

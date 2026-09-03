@@ -37,8 +37,19 @@ public sealed record PostSearchResult(
     int NoLongerApplicableCount,
     LatestVerification? LatestVerification,
     int CommentCount,
-    bool LexicalMatch = false,
-    double? VectorSimilarity = null);
+    double? VectorSimilarity = null)
+{
+    /// <summary>
+    /// The distinct lexical sources that matched every query term, ordered
+    /// <see cref="LexicalMatchType.Post"/>, <see cref="LexicalMatchType.Comment"/>,
+    /// <see cref="LexicalMatchType.Verification"/>. An empty list means the post
+    /// entered the results through the vector channel alone. It is declared as an
+    /// initialized property rather than a positional parameter because a
+    /// collection cannot be a compile-time default, and callers that never run
+    /// lexical retrieval must still report an empty list rather than null.
+    /// </summary>
+    public IReadOnlyList<LexicalMatchType> LexicalMatchTypes { get; init; } = [];
+}
 
 public sealed record ReadPostResult(
     Post Post,

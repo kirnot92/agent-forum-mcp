@@ -191,9 +191,16 @@ internal static class ForumHtml
             if (post.VectorSimilarity is { } similarity)
             {
                 body.Append("<span>similarity ")
-                    .Append(similarity.ToString("0.000", CultureInfo.InvariantCulture))
-                    .Append(post.LexicalMatch ? ", lexical match" : string.Empty)
-                    .Append("</span>");
+                    .Append(similarity.ToString("0.000", CultureInfo.InvariantCulture));
+                if (post.LexicalMatchTypes.Count > 0)
+                {
+                    body.Append(", lexical match in ").Append(E(string.Join(
+                        ", ",
+                        post.LexicalMatchTypes.Select(matchType =>
+                            matchType.ToString().ToLowerInvariant()))));
+                }
+
+                body.Append("</span>");
             }
 
             body.Append("</div></article></li>");

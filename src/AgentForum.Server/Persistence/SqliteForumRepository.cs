@@ -438,7 +438,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
             now);
     }
 
-    public async Task<IReadOnlyList<long>> SearchLexicalPostIdsAsync(
+    public async Task<IReadOnlyList<LexicalPostHit>> SearchLexicalPostsAsync(
         string? repo,
         string query,
         int limit,
@@ -454,7 +454,7 @@ public sealed partial class SqliteForumRepository : IForumRepository
         var tokens = TokenizeFtsQuery(query);
         if (tokens.Length == 0)
         {
-            return Array.Empty<long>();
+            return Array.Empty<LexicalPostHit>();
         }
 
         // Every query term must match. Direct post-text matches come before
@@ -467,29 +467,33 @@ public sealed partial class SqliteForumRepository : IForumRepository
         var matchExpression = BuildFtsMatchExpression(tokens);
 
         await using var connection = await OpenConnectionAsync(cancellationToken).ConfigureAwait(false);
-        var postIds = new List<long>(limit);
-        var seenPostIds = new HashSet<long>();
+        var orderedPostIds = new List<long>(limit);
+        var matchTypesByPostId = new Dictionary<long, HashSet<LexicalMatchType>>();
 
-        foreach (var sql in new[] { PostsFtsSql(normalizedRepo), ActivityFtsSql(normalizedRepo) })
-        {
-            if (postIds.Count >= limit)
-            {
-                break;
-            }
+        await AppendPostTextMatchesAsync(
+                connection,
+                matchExpression,
+                normalizedRepo,
+                limit,
+                orderedPostIds,
+                matchTypesByPostId,
+                cancellationToken)
+            .ConfigureAwait(false);
+        await AppendActivityMatchesAsync(
+                connection,
+                matchExpression,
+                normalizedRepo,
+                limit,
+                orderedPostIds,
+                matchTypesByPostId,
+                cancellationToken)
+            .ConfigureAwait(false);
 
-            await AppendLexicalMatchesAsync(
-                    connection,
-                    sql,
-                    matchExpression,
-                    normalizedRepo,
-                    limit,
-                    seenPostIds,
-                    postIds,
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        return postIds;
+        return orderedPostIds
+            .Select(postId => new LexicalPostHit(
+                postId,
+                matchTypesByPostId[postId].Order().ToArray()))
+            .ToArray();
     }
 
     private static string PostsFtsSql(string? normalizedRepo) => normalizedRepo is null
@@ -510,31 +514,117 @@ public sealed partial class SqliteForumRepository : IForumRepository
 
     private static string ActivityFtsSql(string? normalizedRepo) => normalizedRepo is null
         ? """
-            SELECT CAST(post_activity_fts.post_id AS INTEGER)
+            SELECT CAST(post_activity_fts.post_id AS INTEGER), post_activity_fts.activity_type
             FROM post_activity_fts
             INNER JOIN posts ON posts.id = CAST(post_activity_fts.post_id AS INTEGER)
             WHERE post_activity_fts MATCH $match
             ORDER BY bm25(post_activity_fts), post_activity_fts.rowid;
             """
         : """
-            SELECT CAST(post_activity_fts.post_id AS INTEGER)
+            SELECT CAST(post_activity_fts.post_id AS INTEGER), post_activity_fts.activity_type
             FROM post_activity_fts
             INNER JOIN posts ON posts.id = CAST(post_activity_fts.post_id AS INTEGER)
             WHERE post_activity_fts MATCH $match AND posts.repo = $repo
             ORDER BY bm25(post_activity_fts), post_activity_fts.rowid;
             """;
 
-    private static async Task AppendLexicalMatchesAsync(
+    /// <summary>
+    /// Reads post-text matches in BM25 order and stops at the candidate limit,
+    /// exactly as before match provenance was reported. Stopping early cannot
+    /// hide a <see cref="LexicalMatchType.Post"/> source: activity matches only
+    /// add further candidates while the limit still allows it, so whenever a
+    /// candidate comes from the activity pass this reader was already exhausted.
+    /// </summary>
+    private static async Task AppendPostTextMatchesAsync(
         SqliteConnection connection,
-        string sql,
         string matchExpression,
         string? normalizedRepo,
         int limit,
-        HashSet<long> seenPostIds,
-        List<long> postIds,
+        List<long> orderedPostIds,
+        Dictionary<long, HashSet<LexicalMatchType>> matchTypesByPostId,
         CancellationToken cancellationToken)
     {
-        await using var command = connection.CreateCommand();
+        await using var command = CreateLexicalCommand(
+            connection,
+            PostsFtsSql(normalizedRepo),
+            matchExpression,
+            normalizedRepo);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (orderedPostIds.Count < limit && await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            AddMatch(
+                reader.GetInt64(0),
+                LexicalMatchType.Post,
+                limit,
+                orderedPostIds,
+                matchTypesByPostId);
+        }
+    }
+
+    /// <summary>
+    /// Reads comment and verification-note matches. Unlike the post-text pass it
+    /// always runs and always drains its reader: candidate selection still stops
+    /// at the limit, but a post already selected through its own text can have a
+    /// matching comment or verification further down the activity ordering, and
+    /// an early exit would silently drop that source.
+    /// </summary>
+    private static async Task AppendActivityMatchesAsync(
+        SqliteConnection connection,
+        string matchExpression,
+        string? normalizedRepo,
+        int limit,
+        List<long> orderedPostIds,
+        Dictionary<long, HashSet<LexicalMatchType>> matchTypesByPostId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = CreateLexicalCommand(
+            connection,
+            ActivityFtsSql(normalizedRepo),
+            matchExpression,
+            normalizedRepo);
+
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
+        while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
+        {
+            AddMatch(
+                reader.GetInt64(0),
+                ParseActivityMatchType(reader.GetString(1)),
+                limit,
+                orderedPostIds,
+                matchTypesByPostId);
+        }
+    }
+
+    private static void AddMatch(
+        long postId,
+        LexicalMatchType matchType,
+        int limit,
+        List<long> orderedPostIds,
+        Dictionary<long, HashSet<LexicalMatchType>> matchTypesByPostId)
+    {
+        if (!matchTypesByPostId.TryGetValue(postId, out var matchTypes))
+        {
+            if (orderedPostIds.Count >= limit)
+            {
+                return;
+            }
+
+            matchTypes = [];
+            matchTypesByPostId.Add(postId, matchTypes);
+            orderedPostIds.Add(postId);
+        }
+
+        matchTypes.Add(matchType);
+    }
+
+    private static SqliteCommand CreateLexicalCommand(
+        SqliteConnection connection,
+        string sql,
+        string matchExpression,
+        string? normalizedRepo)
+    {
+        var command = connection.CreateCommand();
         command.CommandText = sql;
         command.Parameters.AddWithValue("$match", matchExpression);
         if (normalizedRepo is not null)
@@ -542,16 +632,16 @@ public sealed partial class SqliteForumRepository : IForumRepository
             command.Parameters.AddWithValue("$repo", normalizedRepo);
         }
 
-        await using var reader = await command.ExecuteReaderAsync(cancellationToken).ConfigureAwait(false);
-        while (postIds.Count < limit && await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
-        {
-            var postId = reader.GetInt64(0);
-            if (seenPostIds.Add(postId))
-            {
-                postIds.Add(postId);
-            }
-        }
+        return command;
     }
+
+    private static LexicalMatchType ParseActivityMatchType(string activityType) => activityType switch
+    {
+        "comment" => LexicalMatchType.Comment,
+        "verification" => LexicalMatchType.Verification,
+        _ => throw new InvalidDataException(
+            $"post_activity_fts contains an unknown activity type '{activityType}'."),
+    };
 
     internal static string[] TokenizeFtsQuery(string query)
     {

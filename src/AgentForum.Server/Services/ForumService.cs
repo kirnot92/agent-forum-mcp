@@ -111,7 +111,7 @@ public sealed class ForumService
             .ConfigureAwait(false);
         var normalizedQueryEmbedding = VectorMath.Normalize(queryEmbedding);
 
-        var lexicalTask = _repository.SearchLexicalPostIdsAsync(
+        var lexicalTask = _repository.SearchLexicalPostsAsync(
             repo,
             query,
             HybridSearchRanker.CandidateLimit,
@@ -124,8 +124,12 @@ public sealed class ForumService
         var vectorIds = vectorHits.Select(hit => hit.PostId).ToArray();
         var similarityById = vectorHits.ToDictionary(hit => hit.PostId, hit => hit.Similarity);
 
-        var lexicalIds = await lexicalTask.ConfigureAwait(false);
-        var lexicalIdSet = lexicalIds.ToHashSet();
+        // The lexical hit order is the lexical ranking and is passed to the
+        // fusion unchanged; the match types travel beside it as retrieval
+        // provenance and never reach the ranker.
+        var lexicalHits = await lexicalTask.ConfigureAwait(false);
+        var lexicalIds = lexicalHits.Select(hit => hit.PostId).ToArray();
+        var matchTypesById = lexicalHits.ToDictionary(hit => hit.PostId, hit => hit.MatchTypes);
 
         var candidateIds = lexicalIds.Concat(vectorIds).Distinct().ToArray();
         if (candidateIds.Length == 0)
@@ -173,7 +177,9 @@ public sealed class ForumService
             .Where(item => candidatesById.ContainsKey(item.PostId))
             .Select(item => candidatesById[item.PostId] with
             {
-                LexicalMatch = lexicalIdSet.Contains(item.PostId),
+                LexicalMatchTypes = matchTypesById.TryGetValue(item.PostId, out var matchTypes)
+                    ? matchTypes
+                    : Array.Empty<LexicalMatchType>(),
                 VectorSimilarity = similarityById.TryGetValue(item.PostId, out var similarity)
                     ? similarity
                     : null,

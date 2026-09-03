@@ -79,7 +79,7 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         }
 
         await repository.InitializeAsync();
-        Assert.Equal([post.Id], await repository.SearchLexicalPostIdsAsync("owner/repo", "fts sentinel", 10));
+        Assert.Equal([post.Id], await LexicalPostIdsAsync(repository, "owner/repo", "fts sentinel", 10));
 
         await using var reopened = OpenInspectionConnection();
         await using var check = reopened.CreateCommand();
@@ -186,7 +186,7 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         Assert.Equal(1, result.CommentCount);
         Assert.Equal(1, result.Verifications.WorkedAsWrittenCount);
 
-        var search = await reopened.SearchLexicalPostIdsAsync("repo-a", "Same Content", 10);
+        var search = await LexicalPostIdsAsync(reopened, "repo-a", "Same Content", 10);
         Assert.Equal([1L, 2L], search);
     }
 
@@ -229,7 +229,7 @@ public sealed class SqliteForumRepositoryTests : IDisposable
             [float.NaN],
             "model-a"));
 
-        Assert.Empty(await repository.SearchLexicalPostIdsAsync("repo-a", "invalid", 10));
+        Assert.Empty(await LexicalPostIdsAsync(repository, "repo-a", "invalid", 10));
         Assert.Empty(await repository.ReadAllStoredEmbeddingsAsync("model-a"));
 
         var vector = new[] { 0.25f, -0.5f, 0.75f };
@@ -239,7 +239,7 @@ public sealed class SqliteForumRepositoryTests : IDisposable
             "model-a");
 
         Assert.Equal(1, post.Id);
-        Assert.Equal([post.Id], await repository.SearchLexicalPostIdsAsync("repo-a", "Parser.cs CS1002", 10));
+        Assert.Equal([post.Id], await LexicalPostIdsAsync(repository, "repo-a", "Parser.cs CS1002", 10));
 
         var stored = Assert.Single(await repository.ReadAllStoredEmbeddingsAsync("model-a"));
         Assert.Equal("repo-a", stored.Repo);
@@ -273,7 +273,7 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         await repository.InitializeAsync();
         var post = await repository.CreatePostAsync(PostInput("repo-a", title, content), [1f], "model-a");
 
-        var result = await repository.SearchLexicalPostIdsAsync("repo-a", query, 10);
+        var result = await LexicalPostIdsAsync(repository, "repo-a", query, 10);
 
         Assert.Equal([post.Id], result);
     }
@@ -288,7 +288,7 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         await repository.InitializeAsync();
         await repository.CreatePostAsync(PostInput("repo-a", "anything", "everything"), [1f], "model-a");
 
-        Assert.Empty(await repository.SearchLexicalPostIdsAsync("repo-a", query, 10));
+        Assert.Empty(await LexicalPostIdsAsync(repository, "repo-a", query, 10));
     }
 
     [Fact]
@@ -317,13 +317,13 @@ public sealed class SqliteForumRepositoryTests : IDisposable
 
         Assert.Equal(
             [originalAndActivity.Id, activityOnly.Id],
-            await repository.SearchLexicalPostIdsAsync("https://github.com/OWNER/REPO.git", "precedence_token", 10));
+            await LexicalPostIdsAsync(repository, "https://github.com/OWNER/REPO.git", "precedence_token", 10));
         Assert.Equal(
             [activityOnly.Id],
-            await repository.SearchLexicalPostIdsAsync("owner/repo", "verification_only_token", 10));
+            await LexicalPostIdsAsync(repository, "owner/repo", "verification_only_token", 10));
         Assert.Equal(
             [activityOnly.Id],
-            await repository.SearchLexicalPostIdsAsync("owner/repo", "fresh_comment_only_token", 10));
+            await LexicalPostIdsAsync(repository, "owner/repo", "fresh_comment_only_token", 10));
     }
 
     [Fact]
@@ -352,16 +352,16 @@ public sealed class SqliteForumRepositoryTests : IDisposable
 
         Assert.Equal(
             [bodyMatch.Id],
-            await repository.SearchLexicalPostIdsAsync(null, "global_body_token", 10));
+            await LexicalPostIdsAsync(repository, null, "global_body_token", 10));
         Assert.Equal(
             [activityMatch.Id],
-            await repository.SearchLexicalPostIdsAsync(null, "global_comment_token", 10));
+            await LexicalPostIdsAsync(repository, null, "global_comment_token", 10));
         Assert.Equal(
             [activityMatch.Id],
-            await repository.SearchLexicalPostIdsAsync(null, "global_verification_token", 10));
+            await LexicalPostIdsAsync(repository, null, "global_verification_token", 10));
         Assert.Equal(
             [activityMatch.Id],
-            await repository.SearchLexicalPostIdsAsync(null, "shared_activity_token", 10));
+            await LexicalPostIdsAsync(repository, null, "shared_activity_token", 10));
     }
 
     [Fact]
@@ -396,8 +396,8 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         var repoB = await repository.CreatePostAsync(PostInput("owner/repo-b", "shared token", "b"), [0f, 1f], "model-a");
 
         Assert.Equal("owner/repo-a", repoA.Repo);
-        Assert.Equal([repoA.Id], await repository.SearchLexicalPostIdsAsync("OWNER/REPO-A", "shared", 10));
-        Assert.Equal([repoB.Id], await repository.SearchLexicalPostIdsAsync("owner/repo-b", "shared", 10));
+        Assert.Equal([repoA.Id], await LexicalPostIdsAsync(repository, "OWNER/REPO-A", "shared", 10));
+        Assert.Equal([repoB.Id], await LexicalPostIdsAsync(repository, "owner/repo-b", "shared", 10));
         var storedEmbeddings = await repository.ReadAllStoredEmbeddingsAsync("model-a");
         Assert.Equal(repoA.Id, Assert.Single(storedEmbeddings, embedding => embedding.Repo == "owner/repo-a").PostId);
         Assert.Equal(repoB.Id, Assert.Single(storedEmbeddings, embedding => embedding.Repo == "owner/repo-b").PostId);
@@ -409,7 +409,7 @@ public sealed class SqliteForumRepositoryTests : IDisposable
 
         Assert.Equal(
             [repoA.Id, repoB.Id],
-            await repository.SearchLexicalPostIdsAsync(null, "shared", 10));
+            await LexicalPostIdsAsync(repository, null, "shared", 10));
         Assert.Equal(
             [repoA.Id, repoB.Id],
             storedEmbeddings.Select(embedding => embedding.PostId));
@@ -697,11 +697,11 @@ public sealed class SqliteForumRepositoryTests : IDisposable
 
         Assert.Equal(
             [fullPost.Id, activityOnly.Id],
-            await repository.SearchLexicalPostIdsAsync("owner/repo", "왜 BindingExpression reflection", 10));
+            await LexicalPostIdsAsync(repository, "owner/repo", "왜 BindingExpression reflection", 10));
 
         // A term that appears in no post text and no activity yields nothing rather than
         // a partial match; the vector ranking alone orders results in that case.
-        Assert.Empty(await repository.SearchLexicalPostIdsAsync("owner/repo", "missing_token reflection", 10));
+        Assert.Empty(await LexicalPostIdsAsync(repository, "owner/repo", "missing_token reflection", 10));
         Assert.Equal("\"alpha\" AND \"beta\"", SqliteForumRepository.BuildFtsMatchExpression("alpha beta"));
     }
 
@@ -730,12 +730,127 @@ public sealed class SqliteForumRepositoryTests : IDisposable
             new LatestVerification(VerificationOutcome.NoLongerApplicable, "commit-new", latest.CreatedAt),
             results[0].LatestVerification);
         Assert.Null(results[1].LatestVerification);
-        Assert.False(results[0].LexicalMatch);
+        Assert.Empty(results[0].LexicalMatchTypes);
         Assert.Null(results[0].VectorSimilarity);
 
         Assert.Equal(
             [post.Id],
-            await repository.SearchLexicalPostIdsAsync("owner/repo", "singleton removed", 10));
+            await LexicalPostIdsAsync(repository, "owner/repo", "singleton removed", 10));
+    }
+    [Fact]
+    public async Task Lexical_match_types_report_the_source_that_matched()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+
+        var postOnly = await repository.CreatePostAsync(
+            PostInput("owner/repo", "source_post_token", "original post text"),
+            [1f],
+            "model-a");
+
+        var commentOnly = await repository.CreatePostAsync(
+            PostInput("owner/repo", "commented", "plain body"),
+            [1f],
+            "model-a");
+        await repository.CreateCommentAsync(CommentInput(commentOnly.Id, "source_comment_token appears here"));
+
+        var verificationOnly = await repository.CreatePostAsync(
+            PostInput("owner/repo", "verified", "plain body"),
+            [1f],
+            "model-a");
+        await repository.AddVerificationAsync(new VerifyPostInput(
+            verificationOnly.Id,
+            VerificationOutcome.WorkedWithChanges,
+            "source_verification_token was needed",
+            "main",
+            "fed987"));
+
+        AssertLexicalHits(
+            await repository.SearchLexicalPostsAsync("owner/repo", "source_post_token", 10),
+            (postOnly.Id, [LexicalMatchType.Post]));
+        AssertLexicalHits(
+            await repository.SearchLexicalPostsAsync("owner/repo", "source_comment_token", 10),
+            (commentOnly.Id, [LexicalMatchType.Comment]));
+        AssertLexicalHits(
+            await repository.SearchLexicalPostsAsync("owner/repo", "source_verification_token", 10),
+            (verificationOnly.Id, [LexicalMatchType.Verification]));
+    }
+
+    [Fact]
+    public async Task Lexical_match_types_are_distinct_and_ordered_post_comment_verification()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+
+        var post = await repository.CreatePostAsync(
+            PostInput("owner/repo", "every_source_token", "original post text"),
+            [1f],
+            "model-a");
+        await repository.CreateCommentAsync(CommentInput(post.Id, "every_source_token first caveat"));
+        await repository.CreateCommentAsync(CommentInput(post.Id, "every_source_token second caveat"));
+        await repository.AddVerificationAsync(new VerifyPostInput(
+            post.Id,
+            VerificationOutcome.WorkedWithChanges,
+            "every_source_token still needed a change",
+            "main",
+            "fed987"));
+
+        // Two comments matched, but each source is reported once, and the order
+        // is the declared enum order rather than the order the queries ran in.
+        AssertLexicalHits(
+            await repository.SearchLexicalPostsAsync("owner/repo", "every_source_token", 10),
+            (post.Id, [LexicalMatchType.Post, LexicalMatchType.Comment, LexicalMatchType.Verification]));
+    }
+
+    [Fact]
+    public async Task Repeated_activity_of_one_kind_reports_that_source_once()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+
+        var post = await repository.CreatePostAsync(
+            PostInput("owner/repo", "commented", "plain body"),
+            [1f],
+            "model-a");
+        await repository.CreateCommentAsync(CommentInput(post.Id, "repeat_token first"));
+        await repository.CreateCommentAsync(CommentInput(post.Id, "repeat_token second"));
+        await repository.CreateCommentAsync(CommentInput(post.Id, "repeat_token third"));
+
+        AssertLexicalHits(
+            await repository.SearchLexicalPostsAsync("owner/repo", "repeat_token", 10),
+            (post.Id, [LexicalMatchType.Comment]));
+    }
+
+    [Fact]
+    public async Task Activity_sources_are_collected_even_when_post_text_matches_fill_the_candidate_limit()
+    {
+        var repository = CreateRepository();
+        await repository.InitializeAsync();
+
+        var textAndComment = await repository.CreatePostAsync(
+            PostInput("owner/repo", "saturating_token", "original post text"),
+            [1f],
+            "model-a");
+        await repository.CreateCommentAsync(CommentInput(textAndComment.Id, "saturating_token also in a comment"));
+
+        var commentOnly = await repository.CreatePostAsync(
+            PostInput("owner/repo", "plain", "plain body"),
+            [1f],
+            "model-a");
+        await repository.CreateCommentAsync(CommentInput(commentOnly.Id, "saturating_token only in a comment"));
+
+        // The single candidate slot is filled by the post-text pass, so the
+        // activity-only post stays out exactly as it did before match types
+        // existed. The selected post still reports its matching comment, which an
+        // early exit on the activity pass would have dropped.
+        AssertLexicalHits(
+            await repository.SearchLexicalPostsAsync("owner/repo", "saturating_token", 1),
+            (textAndComment.Id, [LexicalMatchType.Post, LexicalMatchType.Comment]));
+
+        AssertLexicalHits(
+            await repository.SearchLexicalPostsAsync("owner/repo", "saturating_token", 10),
+            (textAndComment.Id, [LexicalMatchType.Post, LexicalMatchType.Comment]),
+            (commentOnly.Id, [LexicalMatchType.Comment]));
     }
 
     private SqliteForumRepository CreateRepository(TimeProvider? timeProvider = null) =>
@@ -751,6 +866,36 @@ public sealed class SqliteForumRepositoryTests : IDisposable
         }.ToString());
         connection.Open();
         return connection;
+    }
+
+    /// <summary>
+    /// Projects lexical hits back to the bare ordered ID list the existing
+    /// ordering assertions were written against, so those fixtures keep guarding
+    /// candidate selection and order after match provenance was added.
+    /// </summary>
+    private static async Task<long[]> LexicalPostIdsAsync(
+        IForumRepository repository,
+        string? repo,
+        string query,
+        int limit) =>
+        (await repository.SearchLexicalPostsAsync(repo, query, limit))
+            .Select(hit => hit.PostId)
+            .ToArray();
+
+    /// <summary>
+    /// Compares hits member by member. LexicalPostHit holds a collection, so the
+    /// record's generated equality compares that member by reference and a
+    /// direct Assert.Equal on the hits would never match.
+    /// </summary>
+    private static void AssertLexicalHits(
+        IReadOnlyList<LexicalPostHit> hits,
+        params (long PostId, LexicalMatchType[] MatchTypes)[] expected)
+    {
+        Assert.Equal(expected.Select(item => item.PostId), hits.Select(hit => hit.PostId));
+        for (var index = 0; index < expected.Length; index++)
+        {
+            Assert.Equal(expected[index].MatchTypes, hits[index].MatchTypes);
+        }
     }
 
     private static CreatePostInput PostInput(string repo, string title, string content) =>

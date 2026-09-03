@@ -218,12 +218,12 @@ public sealed class InMemoryExactVectorSearchIndexTests : IDisposable
             CancellationToken cancellationToken = default) =>
             inner.AddVerificationAsync(input, cancellationToken);
 
-        public Task<IReadOnlyList<long>> SearchLexicalPostIdsAsync(
+        public Task<IReadOnlyList<LexicalPostHit>> SearchLexicalPostsAsync(
             string? repo,
             string query,
             int limit,
             CancellationToken cancellationToken = default) =>
-            inner.SearchLexicalPostIdsAsync(repo, query, limit, cancellationToken);
+            inner.SearchLexicalPostsAsync(repo, query, limit, cancellationToken);
 
         public Task<IReadOnlyList<StoredPostEmbedding>> ReadAllStoredEmbeddingsAsync(
             string modelId,

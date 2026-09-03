@@ -160,6 +160,23 @@ public sealed class HttpServerHostProtocolTests : IDisposable
             var content = Assert.IsType<TextContentBlock>(Assert.Single(readResult.Content));
             Assert.Contains("One process shares forum state", content.Text);
 
+            // Only the comment on post 1 contains both query terms in one text, so
+            // the wire response must attribute the hit to the comment while post 2
+            // arrives through the vector channel with an empty source list.
+            var searchResult = await secondClient.CallToolAsync(
+                "search_posts",
+                new Dictionary<string, object?>
+                {
+                    ["repo"] = "acme/shared-http",
+                    ["query"] = "beta comment",
+                },
+                cancellationToken: timeout.Token);
+            Assert.NotEqual(true, searchResult.IsError);
+            var searchContent = Assert.IsType<TextContentBlock>(Assert.Single(searchResult.Content));
+            Assert.Contains("\"lexical_match_types\":[\"Comment\"]", searchContent.Text, StringComparison.Ordinal);
+            Assert.Contains("\"lexical_match_types\":[]", searchContent.Text, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"lexical_match\"", searchContent.Text, StringComparison.Ordinal);
+
             var service = app.Services.GetRequiredService<ForumService>();
             var firstPost = await service.ReadPostAsync(1, timeout.Token);
             var secondPost = await service.ReadPostAsync(2, timeout.Token);

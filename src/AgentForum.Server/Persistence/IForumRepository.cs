@@ -34,7 +34,7 @@ public interface IForumRepository
         VerifyPostInput input,
         CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<long>> SearchLexicalPostIdsAsync(
+    Task<IReadOnlyList<LexicalPostHit>> SearchLexicalPostsAsync(
         string? repo,
         string query,
         int limit,
@@ -57,6 +57,15 @@ public interface IForumRepository
         IReadOnlyCollection<long> postIds,
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>
+/// One lexical candidate post together with the sources that matched. The order
+/// of the returned hits is the lexical ranking; <see cref="MatchTypes"/> is
+/// retrieval provenance and never participates in ranking.
+/// </summary>
+public sealed record LexicalPostHit(
+    long PostId,
+    IReadOnlyList<LexicalMatchType> MatchTypes);
 
 public sealed record StoredPostEmbedding(
     string Repo,
