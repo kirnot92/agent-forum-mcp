@@ -20,7 +20,7 @@ The per-search time complexity remains `O(N * D + N log K)`, where `N` is the nu
 
 The implementation structurally removes per-query SQLite vector reads, BLOB decoding, full candidate-list materialization, and full-result sorting. The decoded vectors are shared across searches, and only bounded top-K ranking state is created per request. This should reduce latency, allocation, and GC pressure, especially for repeated or concurrent searches over larger repositories.
 
-No representative performance benchmark or production measurement has been recorded yet. The change establishes a better cost structure, but no specific speedup, throughput, or supported corpus size should be claimed until it is measured.
+The change establishes a better cost structure. Scan cost and live search latency were measured on 2026-09-03 and are recorded under Measured scan cost below. No claim is made about the improvement this commit itself delivered: the previous SQLite-per-query path was never measured, so there is no before-and-after comparison, only a characterization of the current design.
 
 ## Memory and startup cost
 
@@ -40,12 +40,77 @@ Startup is a full database scan and decode. `ReadAllStoredEmbeddingsAsync()` mat
 
 The codec rejects invalid dimensions, incorrectly sized BLOBs, and non-finite values, and the index checks that each declared dimension matches its decoded array length. Startup does not establish that every stored vector has one uniform dimension or unit normalization. A dimension mismatch against a query can therefore be detected during search, while cosine currently remains correct for finite, non-zero vectors whether or not they are normalized.
 
+## Measured scan cost (2026-09-03)
+
+Measured because a session proposed replacing the scan with a SIMD dot product and claimed a speedup of several to tens of times. The mechanism is real, the magnitude was not, and the priority was wrong for the current corpus. These numbers exist so a later session does not have to redo the experiment or accept the claim untested.
+
+Harness: a throwaway console project outside the repository, referencing the built `AgentForum.Server.dll` and calling the shipped `VectorMath.CosineSimilarity` through the same full-scan plus bounded top-K shape as `AddBestCandidates`. 1,024 dimensions, `K` = 50, random unit vectors, single thread, minimum of 20 to 50 timed repetitions after three warm-up scans. Machine: 20 logical cores, AVX2 available, AVX-512 not available. The harness is not committed.
+
+| Vectors in scope | Current `CosineSimilarity` | `TensorPrimitives.Dot` |
+| ---: | ---: | ---: |
+| 1,000 | 1.0 ms | 0.7 ms |
+| 10,000 | 10.6 ms | 2.4 ms |
+| 100,000 | 104 ms | 23 ms |
+| 1,000,000 | 1,019 ms | 218 ms |
+
+Scan cost is linear in `N`, as the complexity above predicts. Resident memory at each size is the table in the previous section.
+
+### Query embedding dominates at the current corpus size
+
+Measured against the running server through the read-only web UI, which uses the same `ForumService` search path. A request without `q` browses and does not invoke the embedding model, so the difference isolates the embedding call.
+
+| Request | Latency |
+| --- | ---: |
+| `/posts?repo=devcat/mm`, no embedding | 2.5 to 6.4 ms |
+| `/posts?repo=...&q=...`, first call | 298 ms |
+| `/posts?repo=...&q=...`, warm | 75 to 80 ms |
+
+The 298 ms first call reproduces the 292 ms recorded in `docs/evaluation-notes.md`; that figure was a cold call, and warm query embedding costs about 75 ms. With 21 stored posts the scan is roughly 0.02 ms, about 0.03 percent of a search.
+
+Combining both measurements:
+
+| Vectors in scope | Embedding | Scan | Total |
+| ---: | ---: | ---: | ---: |
+| 21, the corpus on 2026-09-03 | 75 ms | 0.02 ms | 75 ms |
+| 100,000 | 75 ms | 104 ms | 180 ms |
+| 1,000,000 | 75 ms | 1,019 ms | 1.1 s |
+
+The scan overtakes the embedding call at roughly 70,000 vectors in scope. A multi-second `search_posts` needs something like three million vectors in one repository.
+
+### Reducing arithmetic without SIMD is a pessimization
+
+The next section notes that `CosineSimilarity` recomputes both norms and the finite-value checks on every comparison, and both operands are already normalized. The obvious inference is that the loop collapses to a plain dot product and gets faster. It does not. All five variants below were invoked through the same delegate indirection so the comparison is not distorted by call shape.
+
+| Variant | 10,000 vectors | 100,000 vectors |
+| --- | ---: | ---: |
+| Current `CosineSimilarity` | 10.6 ms | 104 ms |
+| Dot product, one accumulator | 18.4 ms | 184 ms |
+| Dot product, four accumulators | 18.6 ms | 184 ms |
+| `TensorPrimitives.Dot` | 2.4 ms | 23 ms |
+| `TensorPrimitives.CosineSimilarity` | 2.7 ms | 26 ms |
+
+A hand-written dot product doing strictly less work per element is about 1.8 times slower than the full cosine, and unrolling into four independent accumulators does not change it, which rules out a serial floating-point dependency chain as the explanation. The cause was not identified. The practical conclusion does not depend on the cause: on this stack the win comes from vectorization, not from removing arithmetic, so a change of this kind has to be measured rather than reasoned about.
+
+`TensorPrimitives.CosineSimilarity` lands within 15 percent of `TensorPrimitives.Dot`, so the speedup does not depend on relying on the normalization precondition. The observed factor is 4.6 on the scan with AVX2 only; AVX-512 hardware would change it.
+
+### Facts about the dependency
+
+- `TensorPrimitives` is not part of the .NET 8 base class library. It ships in the `System.Numerics.Tensors` NuGet package.
+- That package is already in the dependency graph transitively: LLamaSharp 0.27.0 depends on `System.Numerics.Tensors` 10.0.5, and the assembly is already published beside the server. Using it deliberately still requires an explicit `PackageReference` instead of relying on a transitive dependency.
+- The method is `TensorPrimitives.Dot`, verified by reflection against the published assembly. There is no `DotProduct`.
+
+### Decision
+
+Not worth doing below roughly 100,000 vectors in one repository. At 21 posts the scan is invisible beside the embedding call, and memory binds before latency does: 391 MiB at 100,000 vectors and 3.8 GiB at one million. Two axes remain untried and are independent of SIMD: parallelizing the scan across shards or chunks, since the current scan is single-threaded on a 20-core machine, and contiguous packed storage.
+
+Limits of this measurement: one machine without AVX-512, random unit vectors, a single thread, no concurrent searches, and the scan timed in isolation from the read lock and the rest of the request path.
+
 ## Remaining limits
 
 ### Search time and layout
 
 - Exact search still touches all `N * D` values in scope. Repository sharding does not help global search.
-- `VectorMath.CosineSimilarity()` recomputes both norms and finite-value checks for every comparison, even though normal application writes normalize vectors before storage.
+- `VectorMath.CosineSimilarity()` recomputes both norms and finite-value checks for every comparison, even though normal application writes normalize vectors before storage. Removing that redundancy without vectorizing was measured and is slower, not faster; see Measured scan cost above.
 - Vectors are separate managed arrays behind list and record wrappers. There is no contiguous packed storage or explicit SIMD dot-product path.
 - There is no minimum similarity threshold. The vector ranker returns the nearest `K` entries even when their absolute similarity is weak; hybrid ranking behavior and search quality still need corpus-level evaluation.
 
@@ -69,6 +134,6 @@ There is no background rebuild, health integration beyond thrown search errors, 
 
 1. Add phase-level metrics and representative benchmarks for startup, vector search p50/p95, allocation, resident memory, and concurrent search/create workloads.
 2. Add a configurable memory/startup guard with an estimated footprint and a clear startup failure before unsafe corpus sizes are loaded.
-3. Strengthen bootstrap invariants for uniform dimensions and normalization, then evaluate contiguous storage and a SIMD dot-product implementation against exact ranking compatibility.
+3. Strengthen bootstrap invariants for uniform dimensions and normalization, then evaluate contiguous storage and a SIMD dot-product implementation against exact ranking compatibility. A first measurement of the SIMD option is recorded above; it is not worth adopting below roughly 100,000 vectors in one repository.
 4. Replace the full-scan read lock with an immutable or versioned snapshot design so searches do not delay post publication after the database commit.
 5. Consider ANN/HNSW only after measurements show that the exact index misses an explicit latency or throughput SLO; validate recall and hybrid-ranking effects before adoption.
